@@ -1,6 +1,8 @@
+using DriveATrain;
 using DriveATrain.Auth;
 using DriveATrain.Data;
 using DriveATrain.Hubs;
+using DriveATrain.OpenCv;
 using DriveATrain.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
@@ -19,13 +21,21 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddHostedService<CameraService>();
-builder.Services.AddSingleton<WebcamStreamer>();
+builder.Services.AddSingleton<DccService>();
+builder.Services.AddSingleton<DetectorService>();
+builder.Services.AddSingleton<Try4>();
+builder.Services.AddSingleton<LimiterService>();
+builder.Services.AddHostedService<WebcamStreamer>();
 
 builder.Services.AddSignalR();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=database.db"));
 
+builder.Services.Configure<DccConfig>(builder.Configuration.GetSection("Dcc"));
+builder.Services.Configure<TurnoutConfig>(builder.Configuration.GetSection("Turnout"));
+builder.Services.Configure<CameraConfig>(builder.Configuration.GetSection("Camera"));
+builder.Services.Configure<VisionConfig>(builder.Configuration.GetSection("Vision"));
+builder.Services.Configure<List<UnitDefinition>>(builder.Configuration.GetSection("Units"));
 
 builder.Services
     .AddIdentity<IdentityUser, IdentityRole>(options =>
@@ -111,9 +121,6 @@ app.Map("/ws/video/birdsEye", async context =>
     var streamer = app.Services.GetRequiredService<WebcamStreamer>();
     await streamer.RegisterClientAsync(socket, context.RequestAborted);
 });
-
-var webcam = app.Services.GetRequiredService<WebcamStreamer>();
-webcam.Start();
 
 using (var scope = app.Services.CreateScope())
 {

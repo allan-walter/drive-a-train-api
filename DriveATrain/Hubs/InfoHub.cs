@@ -10,8 +10,8 @@ public class InfoHub : Hub
     {
         object data = new
         {
-            width = CameraService.CAMERA_WIDTH,
-            height = CameraService.CAMERA_HEIGHT,
+            width = DetectorService.CAMERA_WIDTH,
+            height = DetectorService.CAMERA_HEIGHT,
         };
 
         Clients.All.SendAsync("info", data);
