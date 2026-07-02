@@ -16,7 +16,7 @@ public class DccService
 
     public SpeedLimit ForwardLimit { get; set; } = SpeedLimit.NORMAL;
     public SpeedLimit ReverseLimit { get; set; } = SpeedLimit.NORMAL;
-    public Throttle Throttle { get; set; } = new Throttle(0.0, false);
+    public Throttle Throttle { get; set; } = new Throttle(0, 0, false);
 
     public SerialPort Port { get; private set; }
 
@@ -161,6 +161,10 @@ public class DccService
             Connect();
         }
 
+        // For dev
+        if (throttle != null && throttle.OverrideValue > 0)
+            throttleValue = throttle.OverrideValue;
+
         var data = $"<t {config.LocoAddress} {(int)(throttleValue * 100)} {(reverse ? 0 : 1)}>\n";
         var bytes = System.Text.Encoding.UTF8.GetBytes(data); // loco 3, speed 50, forward
         Port.Write(bytes, 0, bytes.Length);
@@ -185,11 +189,13 @@ public class SpeedResult
 public class Throttle
 {
     public double Value { get; set; }
+    public double OverrideValue { get; set; }
     public bool Reverse { get; set; }
 
-    public Throttle(double value, bool reverse)
+    public Throttle(double value, double overrideValue, bool reverse)
     {
         Value = value;
+        OverrideValue = overrideValue;
         Reverse = reverse;
     }
 }

@@ -24,7 +24,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<DccService>();
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddSingleton<Try4>();
-builder.Services.AddSingleton<LimiterService>();
+    builder.Services.AddSingleton<LimiterService>();
 builder.Services.AddHostedService<WebcamStreamer>();
 
 builder.Services.AddSignalR();
@@ -108,6 +108,7 @@ app.UseAuthorization();
 app.MapAuthEndpoints();
 app.MapHub<InfoHub>("/hubs/info");
 app.MapHub<CropHub>("/hubs/crop");
+app.MapHub<ThrottleHub>("/hubs/throttle");
 
 app.Map("/ws/video/birdsEye", async context =>
 {
