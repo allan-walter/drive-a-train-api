@@ -18,7 +18,7 @@ public class WebcamStreamer : IHostedService
     public WebcamStreamer(DetectorService detectorService)
     {
         _detectorService = detectorService;
-        _capture = new VideoCapture(0, VideoCaptureAPIs.DSHOW);
+        _capture = new VideoCapture("/dev/video0", VideoCaptureAPIs.V4L2);
         _capture.Set(VideoCaptureProperties.FrameWidth, DetectorService.CAMERA_WIDTH);
         _capture.Set(VideoCaptureProperties.FrameHeight, DetectorService.CAMERA_HEIGHT);
         // _capture.Set(VideoCaptureProperties.Fps, CameraService.STREAM_FPS);
@@ -75,8 +75,8 @@ public class WebcamStreamer : IHostedService
 
         // Thread 2: read encoded output and broadcast over SignalR
         Task.Run(() => BroadcastLoop(_cts.Token));
-        
-        
+
+
         DebugWindow.Start();
     }
 
@@ -89,7 +89,7 @@ public class WebcamStreamer : IHostedService
         {
             if (!_capture.Read(frame) || frame.Empty())
                 continue;
-            Cv2.Flip(frame, frame, FlipMode.Y); 
+            Cv2.Flip(frame, frame, FlipMode.Y);
 
             // Mat data is contiguous BGR24 for a standard camera read
             var bytes = new byte[frame.Total() * frame.ElemSize()];
@@ -107,7 +107,7 @@ public class WebcamStreamer : IHostedService
         var stdout = _ffmpeg.StandardOutput.BaseStream;
         var buffer = new byte[64 * 1024];
 
-        while (!token.IsCancellationRequested)
+        while (true)
         {
             int read = await stdout.ReadAsync(buffer, 0, buffer.Length, token);
             if (read <= 0) continue;

@@ -25,7 +25,8 @@ builder.Services.AddSingleton<DccService>();
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddSingleton<Try4>();
     builder.Services.AddSingleton<LimiterService>();
-builder.Services.AddHostedService<WebcamStreamer>();
+builder.Services.AddSingleton<WebcamStreamer>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WebcamStreamer>());
 
 builder.Services.AddSignalR();
 builder.Services.AddDbContext<AppDbContext>(options =>

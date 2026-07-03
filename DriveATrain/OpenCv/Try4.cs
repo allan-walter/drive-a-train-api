@@ -24,7 +24,7 @@ public class Try4
         _mog2.ShadowThreshold = 0.4;
         _mog2.NMixtures = 8;
 
-        TrainFromDirectory(@"C:\Users\Allan\source\RunATrain\Detector Images\empty");
+        //TrainFromDirectory(@"C:\Users\Allan\source\RunATrain\Detector Images\empty");
     }
 
     public Mat TrainFromDirectory(string directoryPath)
@@ -68,7 +68,7 @@ public class Try4
     {
         var fgMask = new Mat();
 
-        const double liveLearningRate = 0.0;
+        const double liveLearningRate = 0.5;
         _mog2.Apply(liveFrame, fgMask, liveLearningRate);
 
         var cut = new Mat();

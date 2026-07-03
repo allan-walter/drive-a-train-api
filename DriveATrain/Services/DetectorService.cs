@@ -6,11 +6,15 @@ namespace DriveATrain.Services;
 
 public class DetectorService(Try4 try4, LimiterService limiter, DccService dccService)
 {
-    public static double CAMERA_WIDTH = 640.0;
-    public static double CAMERA_HEIGHT = 360.0;
-    public static int STREAM_WIDTH = 640;
-
-    public static int STREAM_HEIGHT = 360;
+    // public static double CAMERA_WIDTH = 640.0;
+    // public static double CAMERA_HEIGHT = 360.0;
+    public static double CAMERA_WIDTH = 1920.0;
+    public static double CAMERA_HEIGHT = 1080.0;
+    
+    // public static int STREAM_WIDTH = 640;
+    // public static int STREAM_HEIGHT = 360;
+    public static int STREAM_WIDTH = 1920;
+    public static int STREAM_HEIGHT = 1080;
 
     // public static int STREAM_WIDTH = 1920;
     // public static int STREAM_HEIGHT = 1080;
@@ -18,6 +22,8 @@ public class DetectorService(Try4 try4, LimiterService limiter, DccService dccSe
 
     public List<UnitMarkerResponse> Process(Mat frame)
     {
+        DebugWindow.Show("test", frame);
+        return new List<UnitMarkerResponse>();
         var markers = try4.GetMarkerSeeds(frame.Clone());
         var combinedMask = Helpers.CombineMasks(markers.Select(m => m.RawMask).ToList());
         var dirMarkers = try4.IdentifyDirectionMarkers(frame.Clone(), markers, combinedMask);
