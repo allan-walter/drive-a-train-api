@@ -1,10 +1,18 @@
 ﻿using System.Diagnostics;
+using DriveATrain.Hubs;
 using DriveATrain.OpenCv;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 using OpenCvSharp;
 
 namespace DriveATrain.Services;
 
-public class DetectorService(Try4 try4, LimiterService limiter, DccService dccService)
+public class DetectorService(
+    Try4 try4,
+    LimiterService limiter,
+    DccService dccService,
+    IHubContext<UnitHub> unitHub,
+    Config config)
 {
     public static double CAMERA_WIDTH = 640.0;
     public static double CAMERA_HEIGHT = 360.0;
@@ -34,6 +42,21 @@ public class DetectorService(Try4 try4, LimiterService limiter, DccService dccSe
             // _dccService.SetLimits(SpeedLimit.Stop, SpeedLimit.Stop);
             dccService.SetLimits(SpeedLimit.NORMAL, SpeedLimit.NORMAL);
         }
+
+        var throttleLimits = dccService.GetThrottleLimits();
+        var railUnits = units.Select(u => new RailUnitGet(u)).ToList();
+
+        railUnits = RailUnitMocks.GetMocks(config.Units.First(u => u.Type == UnitType.Locomotive),
+            config.Units.First(u => u.Type == UnitType.Wagon));
+
+        unitHub.Clients.All.SendAsync("units", new LiveData
+        {
+            Units = railUnits,
+            Forward = dccService.ForwardLimit,
+            ForwardValue = throttleLimits.Forward,
+            Reverse = dccService.ReverseLimit,
+            ReverseValue = throttleLimits.Reverse,
+        });
 
         // return units;
         return new List<UnitMarkerResponse>();
