@@ -1,7 +1,6 @@
 ﻿using DriveATrain;
 using DriveATrain.OpenCv;
 using DriveATrain.Services;
-using Microsoft.Extensions.Options;
 using OpenCvSharp;
 
 public class LimiterService
@@ -9,10 +8,10 @@ public class LimiterService
     private VisionConfig config;
     private Mat blocks;
 
-    public LimiterService(IOptions<VisionConfig> options)
+    public LimiterService(Config config)
     {
-        config = options.Value;
-        blocks = Cv2.ImRead("Images/blocks.png");
+        this.config = config.Vision;
+        blocks = Cv2.ImRead("Images/blocks.png", ImreadModes.Grayscale);
     }
 
     public Vector2Int GetNearestBlack(Transform to, Mat mask)

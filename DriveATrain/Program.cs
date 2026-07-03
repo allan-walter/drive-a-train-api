@@ -7,6 +7,7 @@ using DriveATrain.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,7 +25,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<DccService>();
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddSingleton<Try4>();
-    builder.Services.AddSingleton<LimiterService>();
+builder.Services.AddSingleton<LimiterService>();
 builder.Services.AddSingleton<WebcamStreamer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebcamStreamer>());
 
@@ -32,11 +33,9 @@ builder.Services.AddSignalR();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=database.db"));
 
-builder.Services.Configure<DccConfig>(builder.Configuration.GetSection("Dcc"));
-builder.Services.Configure<TurnoutConfig>(builder.Configuration.GetSection("Turnout"));
-builder.Services.Configure<CameraConfig>(builder.Configuration.GetSection("Camera"));
-builder.Services.Configure<VisionConfig>(builder.Configuration.GetSection("Vision"));
-builder.Services.Configure<List<UnitDefinition>>(builder.Configuration.GetSection("Units"));
+builder.Services.Configure<Config>(builder.Configuration);
+builder.Services.AddSingleton(resolver =>
+    resolver.GetRequiredService<IOptions<Config>>().Value);
 
 builder.Services
     .AddIdentity<IdentityUser, IdentityRole>(options =>
@@ -110,6 +109,7 @@ app.MapAuthEndpoints();
 app.MapHub<InfoHub>("/hubs/info");
 app.MapHub<CropHub>("/hubs/crop");
 app.MapHub<ThrottleHub>("/hubs/throttle");
+app.MapHub<UnitHub>("/hubs/units");
 
 app.Map("/ws/video/birdsEye", async context =>
 {

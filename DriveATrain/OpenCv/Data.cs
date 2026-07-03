@@ -1,6 +1,7 @@
 ﻿// Replace with your actual enum values
 
 using DriveATrain.OpenCv;
+using DriveATrain.Services;
 using OpenCvSharp;
 
 public static class Colors
@@ -118,6 +119,16 @@ public class UnitMarkerResponse
     }
 }
 
+public class LiveData
+{
+    public List<RailUnitGet> Units { get; set; }
+    
+    public SpeedLimit Forward { get; set; }
+    public double ForwardValue { get; set; }
+    public SpeedLimit Reverse { get; set; }
+    public double ReverseValue { get; set; }
+}
+
 // What is returned to the frontend about the detected units
 public class RailUnitGet
 {
@@ -150,5 +161,32 @@ public class RailUnitGet
         model.Front,
         model.Back)
     {
+    }
+}
+public static class RailUnitMocks
+{
+    public static List<RailUnitGet> GetMocks(UnitDefinition loco, UnitDefinition unit)
+    {
+        var mockA = new RailUnitGet(
+            loco,
+            new Vector2Int(100, 100),   // A
+            new Vector2Int(300, 100),   // B
+            new Vector2Int(300, 300),   // C
+            new Vector2Int(100, 300),   // D
+            front: null,
+            back: null
+        );
+
+        var mockB = new RailUnitGet(
+            unit,
+            new Vector2Int(1000, 600),  // A
+            new Vector2Int(1400, 600),  // B
+            new Vector2Int(1400, 900),  // C
+            new Vector2Int(1000, 900),  // D
+            front: null,
+            back: null
+        );
+
+        return new List<RailUnitGet> { mockA, mockB };
     }
 }

@@ -1,5 +1,14 @@
 ﻿namespace DriveATrain;
 
+public class Config
+{
+    public DccConfig Dcc { get; set; }
+    public TurnoutConfig Turnout { get; set; }
+    public CameraConfig Camera { get; set; }
+    public VisionConfig Vision { get; set; }
+    public List<UnitDefinition> Units { get; set; }
+}
+
 public class DccConfig
 {
     public string Port { get; set; }

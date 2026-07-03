@@ -5,26 +5,25 @@ using OpenCvSharp;
 
 namespace DriveATrain.OpenCv;
 
-public class Try4 
+public class Try4
 {
-
     private readonly BackgroundSubtractorMOG2 _mog2;
 
     private static readonly Size Blur = new Size(9, 9);
-    private List<UnitDefinition> units;
+    private Config config;
 
-    Mat goZone = Cv2.ImRead("Images/go zone.png");
+    Mat goZone = Cv2.ImRead("Images/go zone.png", ImreadModes.Grayscale);
 
-    public Try4(IOptions<List<UnitDefinition>> units)
+    public Try4(Config config)
     {
-        this.units = units.Value;
+        this.config = config;
 
         _mog2 = BackgroundSubtractorMOG2.Create(history: 500, varThreshold: 150.0, detectShadows: true);
         _mog2.VarThresholdGen = 1.0;
         _mog2.ShadowThreshold = 0.4;
         _mog2.NMixtures = 8;
 
-        //TrainFromDirectory(@"C:\Users\Allan\source\RunATrain\Detector Images\empty");
+        // TrainFromDirectory(@"C:\Users\Allan\source\RunATrain\Detector Images\empty");
     }
 
     public Mat TrainFromDirectory(string directoryPath)
@@ -129,8 +128,8 @@ public class Try4
                     -1,
                     color,
                     index == 0
-                        ? units.ElementAtOrDefault(0)
-                        : units.ElementAtOrDefault(1),
+                        ? config.Units.ElementAtOrDefault(0)
+                        : config.Units.ElementAtOrDefault(1),
                     center.Value.ToPoint(),
                     mask,
                     rawColorMasks[index]

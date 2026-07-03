@@ -22,9 +22,9 @@ public class DccService
 
     private DccConfig config;
 
-    public DccService(IOptions<DccConfig> config)
+    public DccService(Config config)
     {
-        this.config = config.Value;
+        this.config = config.Dcc;
 
         Connect();
     }
