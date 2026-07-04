@@ -1,4 +1,5 @@
-﻿using DriveATrain.Hubs;
+﻿using System.Diagnostics;
+using DriveATrain.Hubs;
 using Microsoft.Extensions.Options;
 
 namespace DriveATrain.Services;
@@ -8,7 +9,7 @@ using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
 
-public class DccService
+public class DccService : IHostedService
 {
     private const int CMD_TIME = 500; // adjust to match your original CMD_TIME constant
 
@@ -22,12 +23,12 @@ public class DccService
     public SerialPort Port { get; private set; }
 
     private DccConfig config;
+    IHostApplicationLifetime _lifetime;
 
-    public DccService(Config config)
+    public DccService(Config config, IHostApplicationLifetime lifetime)
     {
         this.config = config.Dcc;
-
-        Connect();
+        _lifetime = lifetime;
     }
 
     public void SetLimits(SpeedLimit forwardSpeed, SpeedLimit backwardSpeed)
@@ -62,20 +63,6 @@ public class DccService
         {
             Console.WriteLine(e);
         }
-
-        AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
-        {
-            try
-            {
-                // Turn track power OFF safely
-                PowerOff();
-                Thread.Sleep(CMD_TIME); // give it time to send
-                Port.Close();
-            }
-            catch (Exception)
-            {
-            }
-        };
     }
 
     public void PowerOn()
@@ -177,6 +164,33 @@ public class DccService
         Port.Write(bytes, 0, bytes.Length);
 
         await Task.CompletedTask;
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        Connect();
+        _lifetime.ApplicationStopping.Register(OnStopping);
+        return Task.CompletedTask;
+    }
+
+    void OnStopping()
+    {
+        try
+        {
+            // Turn track power OFF safely
+            PowerOff();
+            Thread.Sleep(CMD_TIME); // give it time to send
+            Port.Close();
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine(e);
+        }
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
     }
 }
 

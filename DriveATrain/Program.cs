@@ -23,6 +23,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSingleton<DccService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DccService>());
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddSingleton<Try4>();
 builder.Services.AddSingleton<LimiterService>();
