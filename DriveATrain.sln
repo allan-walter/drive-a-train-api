@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DriveATrain", "DriveATrain\DriveATrain.csproj", "{30B368E1-4A35-4A64-9B55-39A42B1533F5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrainingGenerator", "TrainingGenerator\TrainingGenerator.csproj", "{FE5D25F6-3C3D-4561-B755-3FB06CCB2446}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{30B368E1-4A35-4A64-9B55-39A42B1533F5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{30B368E1-4A35-4A64-9B55-39A42B1533F5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{30B368E1-4A35-4A64-9B55-39A42B1533F5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE5D25F6-3C3D-4561-B755-3FB06CCB2446}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE5D25F6-3C3D-4561-B755-3FB06CCB2446}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE5D25F6-3C3D-4561-B755-3FB06CCB2446}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE5D25F6-3C3D-4561-B755-3FB06CCB2446}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
