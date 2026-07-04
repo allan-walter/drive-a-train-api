@@ -19,9 +19,9 @@ public class Try4
         this.config = config;
 
         _mog2 = BackgroundSubtractorMOG2.Create(history: 500, varThreshold: 150.0, detectShadows: true);
-        _mog2.VarThresholdGen = 1.0;
-        _mog2.ShadowThreshold = 0.4;
-        _mog2.NMixtures = 8;
+        // _mog2.VarThresholdGen = 1.0;
+        // _mog2.ShadowThreshold = 0.4;
+        // _mog2.NMixtures = 8;
 
         // TrainFromDirectory(@"C:\Users\Allan\source\RunATrain\Detector Images\empty");
     }
@@ -89,17 +89,17 @@ public class Try4
         var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(21, 21));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
 
-        DebugWindow.Show("step 0", res.Clone());
+        // DebugWindow.Show("step 0", res.Clone());
 
         var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
         Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
 
-        DebugWindow.Show("step 1", res.Clone());
+        // DebugWindow.Show("step 1", res.Clone());
 
         kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
 
-        DebugWindow.Show("step 3", res.Clone());
+        // DebugWindow.Show("step 3", res.Clone());
 
         var convexMask = ConvexHullMask(res);
 
@@ -117,7 +117,7 @@ public class Try4
         for (int index = 0; index < convexColorMasks.Count; index++)
         {
             var mask = convexColorMasks[index];
-            DebugWindow.Show($"mask {index}", mask);
+            // DebugWindow.Show($"mask {index}", mask);
 
             var center = GetCenterOfShape(mask);
             var color = LookupColor.Colors[index];
@@ -152,7 +152,6 @@ public class Try4
             new Scalar(180, 40, 255),
             debug
         );
-        DebugWindow.Show("WHAATTTTTT", debug.Clone());
 
         var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
         Cv2.MorphologyEx(debug, debug, MorphTypes.Open, kernel);
@@ -198,7 +197,6 @@ public class Try4
             markers.Add(center.ToPoint());
         }
 
-        DebugWindow.Show("AAXXXX", frame.Clone());
         return markers;
     }
 
@@ -269,7 +267,6 @@ public class Try4
             }
         }
 
-        DebugWindow.Show("debug frame", frame.Clone());
 
         return res;
     }
