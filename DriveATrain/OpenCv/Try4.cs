@@ -23,11 +23,15 @@ public class Try4
         // _mog2.ShadowThreshold = 0.4;
         // _mog2.NMixtures = 8;
 
-        TrainFromDirectory(@"Images\Training");
+
+        var outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DriveATrain",
+            "Training Images");
+        TrainFromDirectory(outputDir);
     }
 
     public Mat TrainFromDirectory(string directoryPath)
     {
+        var a = new DirectoryInfo(directoryPath);
         if (!Directory.Exists(directoryPath))
             throw new Exception($"Couldn't find directory path {directoryPath}");
 

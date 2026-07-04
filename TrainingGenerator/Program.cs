@@ -11,7 +11,8 @@ class TrainingFrameCapture
 
     static void Main(string[] args)
     {
-        var outputDir = @"Images\Training";
+        var outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DriveATrain",
+            "Training Images");
 
         // Delete existing files to start fresh
         var dir = new DirectoryInfo(outputDir);
