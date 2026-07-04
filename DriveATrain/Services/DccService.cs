@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Options;
+﻿using DriveATrain.Hubs;
+using Microsoft.Extensions.Options;
 
 namespace DriveATrain.Services;
 
@@ -100,24 +101,30 @@ public class DccService
     }
 
     // Run the function for a short time then turn off automatically. Used for couplers
-    public void RunCoupleFunction(int address, int function)
+    public void RunCoupleFunction(List<Uncouple> targets)
     {
         if (!Port.IsOpen)
         {
             Connect();
         }
 
-        // Function mode, address 3, function 0, 1 = on
-        var onBytes = System.Text.Encoding.UTF8.GetBytes($"<F {address} {function} 1>\n");
-        Port.Write(onBytes, 0, onBytes.Length);
-
-        _ = Task.Run(async () =>
+        foreach (var target in targets)
         {
-            // Wait for user to drive away
-            await Task.Delay(TimeSpan.FromMilliseconds(2000));
-            var offBytes = System.Text.Encoding.UTF8.GetBytes($"<F {address} {function} 0>\n");
-            Port.Write(offBytes, 0, offBytes.Length);
-        });
+            int address = target.Address;
+            int function = target.Function;
+
+            // Function mode, address 3, function 0, 1 = on
+            var onBytes = System.Text.Encoding.UTF8.GetBytes($"<F {address} {function} 1>\n");
+            Port.Write(onBytes, 0, onBytes.Length);
+
+            _ = Task.Run(async () =>
+            {
+                // Wait for user to drive away
+                await Task.Delay(TimeSpan.FromMilliseconds(2000));
+                var offBytes = System.Text.Encoding.UTF8.GetBytes($"<F {address} {function} 0>\n");
+                Port.Write(offBytes, 0, offBytes.Length);
+            });
+        }
     }
 
     public LimitValues GetThrottleLimits()

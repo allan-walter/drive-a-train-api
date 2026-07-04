@@ -62,6 +62,7 @@ public class UnitDefinition
     public int FrontCouplerIndex { get; set; }
     public int BackCouplerIndex { get; set; }
 }
+
 // The midpoint when we've kinda identified something
 public class Transform
 {
@@ -122,7 +123,7 @@ public class UnitMarkerResponse
 public class LiveData
 {
     public List<RailUnitGet> Units { get; set; }
-    
+
     public SpeedLimit Forward { get; set; }
     public double ForwardValue { get; set; }
     public SpeedLimit Reverse { get; set; }
@@ -163,30 +164,40 @@ public class RailUnitGet
     {
     }
 }
+
 public static class RailUnitMocks
 {
     public static List<RailUnitGet> GetMocks(UnitDefinition loco, UnitDefinition unit)
     {
+        // Determine which 5-second phase we're in.
+        // Even 5s window = original positions, odd 5s window = mockB moved away.
+        long secondsElapsed = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        bool isFarPhase = (secondsElapsed / 5) % 2 == 1;
+        isFarPhase = false;
+        // How far to push mockB away during the "far" phase.
+        const int separationOffset = 400;
+        int offsetB = isFarPhase ? separationOffset : 0;
+
         var mockA = new RailUnitGet(
             loco,
-            new Vector2Int(100, 100),   // A
-            new Vector2Int(300, 100),   // B
-            new Vector2Int(300, 300),   // C
-            new Vector2Int(100, 300),   // D
-            front: null,
-            back: null
+            new Vector2Int(100, 100), // A
+            new Vector2Int(300, 100), // B
+            new Vector2Int(300, 300), // C
+            new Vector2Int(100, 300), // D
+            front: new Transform(new Vector2Int(300, 200), new Vector2Double(0, 0)), // midpoint of B-C (right side)
+            back: new Transform(new Vector2Int(100, 200), new Vector2Double(0, 0)) // midpoint of A-D (left side)
         );
-
         var mockB = new RailUnitGet(
             unit,
-            new Vector2Int(1000, 600),  // A
-            new Vector2Int(1400, 600),  // B
-            new Vector2Int(1400, 900),  // C
-            new Vector2Int(1000, 900),  // D
-            front: null,
-            back: null
+            new Vector2Int(350 + offsetB, 100), // A
+            new Vector2Int(750 + offsetB, 100), // B
+            new Vector2Int(750 + offsetB, 400), // C
+            new Vector2Int(350 + offsetB, 400), // D
+            front: new Transform(new Vector2Int(750 + offsetB, 250),
+                new Vector2Double(0, 0)), // midpoint of B-C (right side)
+            back: new Transform(new Vector2Int(350 + offsetB, 250),
+                new Vector2Double(0, 0)) // midpoint of A-D (left side)
         );
-
         return new List<RailUnitGet> { mockA, mockB };
     }
 }

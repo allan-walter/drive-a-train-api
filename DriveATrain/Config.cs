@@ -29,6 +29,7 @@ public class CameraConfig
 
 public class VisionConfig
 {
+    public string Camera { get; set; }
     public int SlowWhenPixelsLessThan { get; set; }
     public int StopWhenPixelsLessThan { get; set; }
 }

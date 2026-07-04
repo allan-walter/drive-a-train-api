@@ -1,10 +1,10 @@
 ﻿using System.Collections.Concurrent;
+using System.Threading.Channels;
 using OpenCvSharp;
 using System.Diagnostics;
 using System.Net.WebSockets;
-using DriveATrain.Hubs;
+using DriveATrain;
 using DriveATrain.Services;
-using Microsoft.AspNetCore.SignalR;
 
 public class WebcamStreamer : IHostedService
 {
@@ -13,24 +13,38 @@ public class WebcamStreamer : IHostedService
     private CancellationTokenSource _cts = new();
 
     private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
-    private DetectorService _detectorService;
+    private readonly DetectorService _detectorService;
+    private readonly Channel<Mat> _detectionFrames = Channel.CreateBounded<Mat>(
+        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
 
-    public WebcamStreamer(DetectorService detectorService)
+    private byte[] _streamBuffer = [];
+
+    public WebcamStreamer(Config config, DetectorService detectorService)
     {
         _detectorService = detectorService;
-        _capture = new VideoCapture("/dev/video0", VideoCaptureAPIs.V4L2);
+        if (OperatingSystem.IsWindows())
+        {
+            int index = int.Parse(config.Vision.Camera);
+            _capture = new VideoCapture(index, VideoCaptureAPIs.DSHOW);
+        }
+        else
+        {
+            _capture = new VideoCapture(config.Vision.Camera, VideoCaptureAPIs.V4L2);
+        }
+
         _capture.Set(VideoCaptureProperties.FrameWidth, DetectorService.CAMERA_WIDTH);
         _capture.Set(VideoCaptureProperties.FrameHeight, DetectorService.CAMERA_HEIGHT);
-        // _capture.Set(VideoCaptureProperties.Fps, CameraService.STREAM_FPS);
 
+        var streamSize = $"{DetectorService.STREAM_WIDTH}x{DetectorService.STREAM_HEIGHT}";
         _ffmpeg = new Process
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
                 Arguments =
-                    $"-f rawvideo -pix_fmt bgr24 -s {DetectorService.CAMERA_WIDTH}x{DetectorService.STREAM_HEIGHT} -r {DetectorService.STREAM_FPS} -i pipe:0 " +
-                    "-f mpegts -codec:v mpeg1video -b:v 1000k -bf 0 -",
+                    $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
+                    $"-f rawvideo -pix_fmt bgr24 -s {streamSize} -r {DetectorService.STREAM_FPS} -i pipe:0 " +
+                    $"-c:v mpeg1video -b:v 1000k -bf 0 -g 1 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = false,
@@ -45,7 +59,6 @@ public class WebcamStreamer : IHostedService
         var id = Guid.NewGuid();
         _clients[id] = socket;
 
-        // Keep the connection open; JSMpeg only reads, doesn't send anything meaningful
         var buffer = new byte[1024];
         try
         {
@@ -70,12 +83,9 @@ public class WebcamStreamer : IHostedService
     {
         _ffmpeg.Start();
 
-        // Thread 1: push webcam frames into ffmpeg stdin
         Task.Run(() => CaptureLoop(_cts.Token));
-
-        // Thread 2: read encoded output and broadcast over SignalR
+        Task.Run(() => DetectionLoop(_cts.Token));
         Task.Run(() => BroadcastLoop(_cts.Token));
-
 
         DebugWindow.Start();
     }
@@ -84,21 +94,42 @@ public class WebcamStreamer : IHostedService
     {
         using var frame = new Mat();
         var stdin = _ffmpeg.StandardInput.BaseStream;
+        var frameBytes = DetectorService.STREAM_WIDTH * DetectorService.STREAM_HEIGHT * 3;
+        _streamBuffer = new byte[frameBytes];
 
         while (!token.IsCancellationRequested)
         {
             if (!_capture.Read(frame) || frame.Empty())
                 continue;
+
             Cv2.Flip(frame, frame, FlipMode.Y);
 
-            // Mat data is contiguous BGR24 for a standard camera read
-            var bytes = new byte[frame.Total() * frame.ElemSize()];
-            System.Runtime.InteropServices.Marshal.Copy(frame.Data, bytes, 0, bytes.Length);
+            System.Runtime.InteropServices.Marshal.Copy(frame.Data, _streamBuffer, 0, frameBytes);
+            stdin.Write(_streamBuffer, 0, frameBytes);
 
-            stdin.Write(bytes, 0, bytes.Length);
-            stdin.Flush();
+            if (_detectionFrames.Writer.TryWrite(frame.Clone()))
+                continue;
 
-            _detectorService.Process(frame);
+            // Channel full — drop the oldest pending frame and enqueue the latest.
+            while (_detectionFrames.Reader.TryRead(out var dropped))
+                dropped.Dispose();
+
+            _detectionFrames.Writer.TryWrite(frame.Clone());
+        }
+    }
+
+    private async Task DetectionLoop(CancellationToken token)
+    {
+        try
+        {
+            await foreach (var frame in _detectionFrames.Reader.ReadAllAsync(token))
+            {
+                using (frame)
+                    _detectorService.Process(frame);
+            }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -107,33 +138,43 @@ public class WebcamStreamer : IHostedService
         var stdout = _ffmpeg.StandardOutput.BaseStream;
         var buffer = new byte[64 * 1024];
 
-        while (true)
+        while (!token.IsCancellationRequested)
         {
             int read = await stdout.ReadAsync(buffer, 0, buffer.Length, token);
             if (read <= 0) continue;
 
-            var segment = new ArraySegment<byte>(buffer, 0, read);
+            var chunk = buffer.AsMemory(0, read);
+            var sends = new List<Task>(_clients.Count);
 
             foreach (var kvp in _clients)
             {
                 var socket = kvp.Value;
                 if (socket.State != WebSocketState.Open) continue;
 
-                try
-                {
-                    await socket.SendAsync(segment, WebSocketMessageType.Binary, true, token);
-                }
-                catch
-                {
-                    _clients.TryRemove(kvp.Key, out _);
-                }
+                sends.Add(SendToClientAsync(kvp.Key, socket, chunk, token));
             }
+
+            if (sends.Count > 0)
+                await Task.WhenAll(sends);
+        }
+    }
+
+    private async Task SendToClientAsync(Guid id, WebSocket socket, ReadOnlyMemory<byte> chunk, CancellationToken token)
+    {
+        try
+        {
+            await socket.SendAsync(chunk, WebSocketMessageType.Binary, true, token);
+        }
+        catch
+        {
+            _clients.TryRemove(id, out _);
         }
     }
 
     public void Stop()
     {
         _cts.Cancel();
+        _detectionFrames.Writer.TryComplete();
         _capture.Release();
         try
         {
