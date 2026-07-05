@@ -1,4 +1,6 @@
-﻿namespace TrainingGenerator;
+﻿using DriveATrain.Services;
+
+namespace TrainingGenerator;
 
 using OpenCvSharp;
 using System;
@@ -6,8 +8,6 @@ using System.IO;
 
 class TrainingFrameCapture
 {
-    private const int CameraWidth = 1280; // set to your actual CAMERA_WIDTH
-    private const int CameraHeight = 720; // set to your actual CAMERA_HEIGHT
 
     static void Main(string[] args)
     {
@@ -34,11 +34,11 @@ class TrainingFrameCapture
         }
         else
         {
-            camera = new VideoCapture("/dev/ttyACM0", VideoCaptureAPIs.V4L2);
+            camera = new VideoCapture("/dev/video0", VideoCaptureAPIs.V4L2);
         }
 
-        camera.Set(VideoCaptureProperties.FrameWidth, CameraWidth);
-        camera.Set(VideoCaptureProperties.FrameHeight, CameraHeight);
+        camera.Set(VideoCaptureProperties.FrameWidth, DetectorService.CAMERA_WIDTH);
+        camera.Set(VideoCaptureProperties.FrameHeight, DetectorService.CAMERA_HEIGHT);
 
         using var frame = new Mat();
 

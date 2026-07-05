@@ -26,7 +26,7 @@ public class DetectorService(
     public void Process(Mat frame)
     {
         var markers = try4.GetMarkerSeeds(frame.Clone());
-        var combinedMask = Helpers.CombineMasks(markers.Select(m => m.RawMask).ToList());
+        var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
         var dirMarkers = try4.IdentifyDirectionMarkers(frame.Clone(), markers, combinedMask);
         var units = try4.GetRects(frame.Clone(), markers, dirMarkers);
         var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);

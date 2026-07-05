@@ -86,41 +86,48 @@ public class Try4
 
         var res = GetDiffMask(frame);
 
-        DebugWindow.Show("raw diff", res.Clone());
+        // DebugWindow.Show("raw diff", res.Clone());
 
         Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
 
-        var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(21, 21));
+        // Erosion then dilation, renmove noise
+        var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(3, 3));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
 
         // DebugWindow.Show("step 0", res.Clone());
 
+        // Dilation then eriosion, fill gaps and join blobs
         var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
         Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
 
         // DebugWindow.Show("step 1", res.Clone());
 
+        // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
         kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
 
-        // DebugWindow.Show("step 3", res.Clone());
+        // DebugWindow.Show("step 2", res.Clone());
 
-        var convexMask = ConvexHullMask(res);
+
+        // Convex is no good if the train is on a curve
+        // var convexMask = ConvexHullMask(res);
 
         var cutout = new Mat();
         var blurredFrame = new Mat();
-        Cv2.GaussianBlur(frame, blurredFrame, new Size(71, 71), 0);
-        blurredFrame.CopyTo(cutout, convexMask);
+        // A bit of blur so there is more of an average color to find
+        Cv2.GaussianBlur(frame, blurredFrame, new Size(21, 21), 0);
+        blurredFrame.CopyTo(cutout, res);
+        //
+        // DebugWindow.Show("cutout", cutout);
 
-        var convexColorMasks =
-            SplitMaskByNearestColor(frame, convexMask, LookupColor.Colors.Select(c => c.SingleColor).ToList());
-        var rawColorMasks = SplitMaskByNearestColor(frame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
+        var colorMasks =
+            SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
 
         var markerDefs = new List<MarkerDef>();
 
-        for (int index = 0; index < convexColorMasks.Count; index++)
+        for (int index = 0; index < colorMasks.Count; index++)
         {
-            var mask = convexColorMasks[index];
+            var mask = colorMasks[index];
             // DebugWindow.Show($"mask {index}", mask);
 
             var center = GetCenterOfShape(mask);
@@ -135,8 +142,7 @@ public class Try4
                         ? config.Units.ElementAtOrDefault(0)
                         : config.Units.ElementAtOrDefault(1),
                     center.Value.ToPoint(),
-                    mask,
-                    rawColorMasks[index]
+                    mask
                 ));
             }
         }
@@ -150,15 +156,19 @@ public class Try4
         Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
 
         var debug = new Mat();
-        Cv2.InRange(
-            hsv,
-            new Scalar(0, 0, 180),
-            new Scalar(180, 40, 255),
-            debug
-        );
+        // Cv2.InRange(
+        //     hsv,
+        //     new Scalar(0, 0, 180),
+        //     new Scalar(180, 40, 255),
+        //     debug
+        // );
+        Cv2.InRange(hsv, new Scalar(0, 0, 120), new Scalar(180, 35, 255), debug);
 
-        var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
-        Cv2.MorphologyEx(debug, debug, MorphTypes.Open, kernel);
+        // var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
+        // Cv2.MorphologyEx(debug, debug, MorphTypes.Open, kernel);
+
+        // DebugWindow.Show("frame", frame);
+        // DebugWindow.Show("dir markers", debug);
 
         var cutout = new Mat();
         debug.CopyTo(cutout, mask);
@@ -167,39 +177,29 @@ public class Try4
             RetrievalModes.External, ContourApproximationModes.ApproxSimple);
 
         var markers = new List<Point>();
-        var bits = new List<Point[]>();
 
         foreach (var contour in contours)
         {
             var area = Cv2.ContourArea(contour);
-            Cv2.DrawContours(frame, new[] { contour }, -1, Colors.ORANGE, -1);
+            Cv2.DrawContours(frame, new[] { contour }, -1, Scalar.Orange, -1);
 
             var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
             var rect = Cv2.MinAreaRect(contour2f);
             var center = rect.Center;
 
-            Cv2.PutText(frame, ((int)area).ToString(), new Point((int)center.X, (int)center.Y),
-                HersheyFonts.HersheySimplex, 3.0, Colors.RED);
-
-            if (area > 300 && area < 400.0)
+            if (area > 23 && area < 60)
             {
-                bits.Add(contour);
+                Cv2.Circle(frame, center.ToPoint(), 3, Scalar.Green, -1);
             }
             else
             {
-                Cv2.Circle(frame, new Point((int)center.X, (int)center.Y), 3, Colors.RED, -1);
+                Cv2.Circle(frame, center.ToPoint(), 3, Scalar.Red, -1);
             }
-        }
 
-        foreach (var b in bits)
-        {
-            Cv2.DrawContours(frame, new[] { b }, -1, Colors.ORANGE, -1);
-            var contour2f = b.Select(p => new Point2f(p.X, p.Y)).ToArray();
-            var rect = Cv2.MinAreaRect(contour2f);
-            var center = rect.Center;
-            Cv2.Circle(frame, new Point((int)center.X, (int)center.Y), 3, Colors.GREEN, -1);
-            markers.Add(center.ToPoint());
+            Cv2.PutText(frame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 0.5, Scalar.Orange, 2);
         }
+        
+        // DebugWindow.Show("debug frame", frame);
 
         return markers;
     }
@@ -265,7 +265,7 @@ public class Try4
                     }
                 }
 
-                Cv2.Circle(frame, new Point(best.front.Position.X, best.front.Position.Y), 20, Colors.GREEN);
+                // Cv2.Circle(frame, new Point(best.front.Position.X, best.front.Position.Y), 20, Colors.GREEN);
 
                 res.Add(new UnitMarkerResponse(box.ToList(), best.front, best.back, marker));
             }
@@ -294,31 +294,66 @@ public class Try4
         return result;
     }
 
-    private List<Mat> SplitMaskByNearestColor(Mat frame, Mat mask, List<Scalar> targetColors)
+    private List<Mat> SplitMaskByNearestColorRegion(Mat frame, Mat mask, List<Scalar> targetColors, int tolerance = 20)
     {
-        var results = targetColors.Select(_ => Mat.Zeros(mask.Size(), MatType.CV_8UC1).ToMat()).ToList();
+        int n = targetColors.Count;
+        var colorMasks = new Mat[n];
+        var distMaps = new Mat[n];
 
-        for (int y = 0; y < mask.Rows; y++)
+        // Step 1: per-color range masks, restricted to the original mask
+        for (int i = 0; i < n; i++)
         {
-            for (int x = 0; x < mask.Cols; x++)
+            var color = targetColors[i];
+            var lower = new Scalar(
+                Math.Max(0, color.Val0 - tolerance),
+                Math.Max(0, color.Val1 - tolerance),
+                Math.Max(0, color.Val2 - tolerance));
+            var upper = new Scalar(
+                Math.Min(255, color.Val0 + tolerance),
+                Math.Min(255, color.Val1 + tolerance),
+                Math.Min(255, color.Val2 + tolerance));
+
+            Mat rangeMask = new Mat();
+            Cv2.InRange(frame, lower, upper, rangeMask);
+
+            Mat restricted = new Mat();
+            Cv2.BitwiseAnd(rangeMask, mask, restricted);
+            colorMasks[i] = restricted;
+        }
+
+        // Step 2: distance transform per color
+        // (distance from every pixel to the nearest pixel belonging to that color region)
+        for (int i = 0; i < n; i++)
+        {
+            Mat inv = new Mat();
+            Cv2.BitwiseNot(colorMasks[i], inv); // color pixels -> 0, everything else -> 255
+
+            Mat dist = new Mat();
+            Cv2.DistanceTransform(inv, dist, DistanceTypes.L2, DistanceTransformMasks.Mask5);
+            distMaps[i] = dist;
+        }
+
+        // Step 3: assign every pixel in the original mask to its nearest color region
+        var results = Enumerable.Range(0, n)
+            .Select(_ => Mat.Zeros(mask.Size(), MatType.CV_8UC1).ToMat())
+            .ToList();
+
+        int rows = mask.Rows;
+        for (int y = 0; y < rows; y++)
+        {
+            int cols = mask.Cols;
+            for (int x = 0; x < cols; x++)
             {
                 if (mask.At<byte>(y, x) == 0) continue;
 
-                var pixel = frame.At<Vec3b>(y, x);
-                double bestDist = double.MaxValue;
                 int bestIndex = -1;
-
-                for (int i = 0; i < targetColors.Count; i++)
+                float bestDist = float.MaxValue;
+                for (int i = 0; i < n; i++)
                 {
-                    var c = targetColors[i];
-                    double db = pixel.Item0 - c.Val0;
-                    double dg = pixel.Item1 - c.Val1;
-                    double dr = pixel.Item2 - c.Val2;
-                    double dist = db * db + dg * dg + dr * dr;
-
-                    if (dist < bestDist)
+                    float d = distMaps[i].At<float>(y, x);
+                    if (d < bestDist)
                     {
-                        bestDist = dist;
+                        bestDist = d;
                         bestIndex = i;
                     }
                 }

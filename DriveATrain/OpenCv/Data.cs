@@ -4,28 +4,15 @@ using DriveATrain.OpenCv;
 using DriveATrain.Services;
 using OpenCvSharp;
 
-public static class Colors
-{
-    public static readonly Scalar ORANGE = new Scalar(0, 165, 255);
-    public static readonly Scalar RED = new Scalar(0, 0, 255);
-    public static readonly Scalar GREEN = new Scalar(0, 255, 0);
-}
 
 // HSV-range based color used for marker lookup/classification.
 public class LookupColor
 {
-    // Hsv
-    public Scalar Lower { get; set; }
-
-    public Scalar Upper { get; set; }
-
     // bgr
     public Scalar SingleColor { get; set; }
 
-    public LookupColor(Scalar lower, Scalar upper, Scalar singleColor)
+    public LookupColor(Scalar singleColor)
     {
-        Lower = lower;
-        Upper = upper;
         SingleColor = singleColor;
     }
 
@@ -33,15 +20,11 @@ public class LookupColor
     {
         // Black (train roof) - actually blue-grey under this lighting
         new LookupColor(
-            lower: new Scalar(95.0, 20.0, 30.0),
-            upper: new Scalar(140.0, 150.0, 85.0), // V: 100 -> 75 to cut bright shadows
-            singleColor: new Scalar(0.298 * 255, 0.249, 0.252)
+            singleColor: new Scalar(0.121 * 255, 0.121 * 255, 0.101 * 255)
         ),
         // Yellow
         new LookupColor(
-            lower: new Scalar(10.0, 50.0, 70.0),
-            upper: new Scalar(37.0, 180.0, 220.0),
-            singleColor: new Scalar(0.396 * 255, 0.585 * 255, 0.788 * 255.0)
+            singleColor: new Scalar(0.288 * 255, 0.467 * 255, 0.567 * 255.0)
         ),
     };
 }
@@ -90,16 +73,14 @@ public class MarkerDef
 
     // Convex, clean but might include slightly too much
     public Mat Mask { get; set; }
-    public Mat RawMask { get; set; }
 
-    public MarkerDef(int componentId, LookupColor color, UnitDefinition? unit, Point center, Mat mask, Mat rawMask)
+    public MarkerDef(int componentId, LookupColor color, UnitDefinition? unit, Point center, Mat mask)
     {
         ComponentId = componentId;
         Color = color;
         Unit = unit;
         Center = center;
         Mask = mask;
-        RawMask = rawMask;
     }
 }
 
