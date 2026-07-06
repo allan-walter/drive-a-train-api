@@ -29,6 +29,8 @@ builder.Services.AddSingleton<Try4>();
 builder.Services.AddSingleton<LimiterService>();
 builder.Services.AddSingleton<WebcamStreamer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebcamStreamer>());
+builder.Services.AddSingleton<DebugStreamer>();
+// builder.Services.AddHostedService(sp => sp.GetRequiredService<DebugStreamer>());
 
 builder.Services.AddSignalR();
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -122,6 +124,19 @@ app.Map("/ws/video/birdsEye", async context =>
 
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
     var streamer = app.Services.GetRequiredService<WebcamStreamer>();
+    await streamer.RegisterClientAsync(socket, context.RequestAborted);
+});
+
+app.Map("/ws/video/debug", async context =>
+{
+    if (!context.WebSockets.IsWebSocketRequest)
+    {
+        context.Response.StatusCode = 400;
+        return;
+    }
+
+    using var socket = await context.WebSockets.AcceptWebSocketAsync();
+    var streamer = app.Services.GetRequiredService<DebugStreamer>();
     await streamer.RegisterClientAsync(socket, context.RequestAborted);
 });
 

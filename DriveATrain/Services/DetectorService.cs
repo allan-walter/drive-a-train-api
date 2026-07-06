@@ -23,14 +23,20 @@ public class DetectorService(
     public static int STREAM_HEIGHT = 1080;
     public static int STREAM_FPS = 30;
 
+    public Mat currentDebugFrame = new Mat();
+
     public void Process(Mat frame)
     {
         var debugFrame = frame.Clone();
         var markers = try4.GetMarkerSeeds(frame.Clone(), debugFrame);
+
         var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
-        
+
         var dirMarkers = try4.IdentifyDirectionMarkers(frame, debugFrame, markers, combinedMask);
         var units = try4.GetRects(frame, debugFrame, markers, dirMarkers);
+        
+        debugFrame.CopyTo(currentDebugFrame);
+        
         var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
         // DebugWindow.Show("debug frame", debugFrame);

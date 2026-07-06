@@ -71,7 +71,9 @@ public class Try4
     {
         // Debug the go zone
         double goZoneAlpha = 0.2;
-        Cv2.AddWeighted(goZone, goZoneAlpha, debugFrame, 1 - goZoneAlpha, 1, debugFrame);
+        Mat goZoneColor = new Mat();
+        Cv2.CvtColor(goZone, goZoneColor, ColorConversionCodes.GRAY2BGR);
+        Cv2.AddWeighted(goZoneColor, goZoneAlpha, debugFrame, 1 - goZoneAlpha, 1, debugFrame);
         
         Cv2.GaussianBlur(frame, frame, Blur, 0);
 
