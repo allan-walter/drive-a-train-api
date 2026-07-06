@@ -1,5 +1,4 @@
 ﻿using System.Collections.Concurrent;
-using System.Threading.Channels;
 using OpenCvSharp;
 using System.Diagnostics;
 using System.Net.WebSockets;
@@ -13,8 +12,6 @@ public class DebugStreamer : IHostedService
 
     private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
     private readonly DetectorService _detectorService;
-    private readonly Channel<Mat> _detectionFrames = Channel.CreateBounded<Mat>(
-        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
 
     private byte[] _streamBuffer = [];
 
@@ -90,15 +87,6 @@ public class DebugStreamer : IHostedService
 
             System.Runtime.InteropServices.Marshal.Copy(frame.Data, _streamBuffer, 0, frameBytes);
             stdin.Write(_streamBuffer, 0, frameBytes);
-
-            if (_detectionFrames.Writer.TryWrite(frame.Clone()))
-                continue;
-
-            // Channel full — drop the oldest pending frame and enqueue the latest.
-            while (_detectionFrames.Reader.TryRead(out var dropped))
-                dropped.Dispose();
-
-            _detectionFrames.Writer.TryWrite(frame.Clone());
         }
     }
 
@@ -143,7 +131,6 @@ public class DebugStreamer : IHostedService
     public void Stop()
     {
         _cts.Cancel();
-        _detectionFrames.Writer.TryComplete();
         try
         {
             _ffmpeg.StandardInput.Close();

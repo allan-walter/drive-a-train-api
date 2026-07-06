@@ -25,6 +25,10 @@ public class DetectorService(
 
     public Mat currentDebugFrame = new Mat();
 
+    private LiveData? _pendingLiveData;
+    private List<RailConnection>? _pendingConnections;
+    private int _publishScheduled;
+
     public void Process(Mat frame)
     {
         using var processingFrame = frame.Clone();
@@ -61,21 +65,60 @@ public class DetectorService(
         // railUnits = RailUnitMocks.GetMocks(config.Units.First(u => u.Type == UnitType.Locomotive),
         //     config.Units.First(u => u.Type == UnitType.Wagon));
 
-        unitHub.Clients.All.SendAsync("units", new LiveData
-        {
-            Units = railUnits,
-            Forward = dccService.ForwardLimit,
-            ForwardValue = throttleLimits.Forward,
-            Reverse = dccService.ReverseLimit,
-            ReverseValue = throttleLimits.Reverse,
-        });
-
-            unitHub.Clients.All.SendAsync("connections", GetConnections(railUnits));
+            SchedulePublish(
+                new LiveData
+                {
+                    Units = railUnits,
+                    Forward = dccService.ForwardLimit,
+                    ForwardValue = throttleLimits.Forward,
+                    Reverse = dccService.ReverseLimit,
+                    ReverseValue = throttleLimits.Reverse,
+                },
+                GetConnections(railUnits));
         }
         finally
         {
             foreach (var marker in markers)
                 marker.Mask.Dispose();
+        }
+    }
+
+    private void SchedulePublish(LiveData liveData, List<RailConnection> connections)
+    {
+        _pendingLiveData = liveData;
+        _pendingConnections = connections;
+        if (Interlocked.CompareExchange(ref _publishScheduled, 1, 0) != 0)
+            return;
+
+        _ = PublishLoopAsync();
+    }
+
+    private async Task PublishLoopAsync()
+    {
+        try
+        {
+            while (true)
+            {
+                var liveData = _pendingLiveData;
+                var connections = _pendingConnections;
+                if (liveData == null || connections == null)
+                    break;
+
+                _pendingLiveData = null;
+                _pendingConnections = null;
+
+                await unitHub.Clients.All.SendAsync("units", liveData);
+                await unitHub.Clients.All.SendAsync("connections", connections);
+
+                if (_pendingLiveData == null)
+                    break;
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _publishScheduled, 0);
+            if (_pendingLiveData != null)
+                SchedulePublish(_pendingLiveData, _pendingConnections!);
         }
     }
 

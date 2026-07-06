@@ -103,47 +103,53 @@ public class Try4
 
         var markerDefs = new List<MarkerDef>();
         using var contourOverlay = new Mat(debugFrame.Size(), debugFrame.Type());
+        var keptMasks = new HashSet<Mat>();
 
-        for (int index = 0; index < colorMasks.Count; index++)
+        try
         {
-            var mask = colorMasks[index];
-
-            var center = GetCenterOfShape(mask);
-            var color = LookupColor.Colors[index];
-
-            Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
-                RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-
-            foreach (var contour in contours)
+            for (int index = 0; index < colorMasks.Count; index++)
             {
-                contourOverlay.SetTo(Scalar.All(0));
-                Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
-                double alpha = 0.5;
-                Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
+                var mask = colorMasks[index];
+
+                var center = GetCenterOfShape(mask);
+                var color = LookupColor.Colors[index];
+
+                Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
+                    RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+
+                foreach (var contour in contours)
+                {
+                    contourOverlay.SetTo(Scalar.All(0));
+                    Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
+                    double alpha = 0.5;
+                    Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
+                }
+
+                if (contours.Length != 1)
+                    continue;
+
+                if (center != null)
+                {
+                    keptMasks.Add(mask);
+                    markerDefs.Add(new MarkerDef(
+                        -1,
+                        color,
+                        index == 0
+                            ? config.Units.ElementAtOrDefault(0)
+                            : config.Units.ElementAtOrDefault(1),
+                        center.Value.ToPoint(),
+                        mask,
+                        contours[0]
+                    ));
+                }
             }
-
-            if (contours.Length != 1)
+        }
+        finally
+        {
+            foreach (var mask in colorMasks)
             {
-                mask.Dispose();
-                continue;
-            }
-
-            if (center != null)
-            {
-                markerDefs.Add(new MarkerDef(
-                    -1,
-                    color,
-                    index == 0
-                        ? config.Units.ElementAtOrDefault(0)
-                        : config.Units.ElementAtOrDefault(1),
-                    center.Value.ToPoint(),
-                    mask,
-                    contours[0]
-                ));
-            }
-            else
-            {
-                mask.Dispose();
+                if (!keptMasks.Contains(mask))
+                    mask.Dispose();
             }
         }
 
@@ -354,13 +360,6 @@ public class Try4
 
     private static bool RectContainsPoint(RotatedRect rect, Point2f p)
     {
-        // OpenCvSharp RotatedRect doesn't expose a direct containsPoint helper,
-        // so approximate using the bounding polygon test.
-        var pts = rect.Points();
-        using var poly = new Mat(4, 1, MatType.CV_32FC2);
-        for (int i = 0; i < 4; i++)
-            poly.Set(i, 0, pts[i]);
-
-        return Cv2.PointPolygonTest(InputArray.Create(pts), p, false) >= 0;
+        return Cv2.PointPolygonTest(rect.Points(), p, false) >= 0;
     }
 }

@@ -30,6 +30,7 @@ public class WebcamStreamer : IHostedService
         else
         {
             _capture = new VideoCapture(config.Vision.Camera, VideoCaptureAPIs.V4L2);
+            _capture.Set(VideoCaptureProperties.BufferSize, 1);
         }
 
         _capture.Set(VideoCaptureProperties.FrameWidth, DetectorService.CAMERA_WIDTH);
@@ -47,7 +48,7 @@ public class WebcamStreamer : IHostedService
                     $"-c:v mpeg1video -b:v 1000k -bf 0 -g 1 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
-                RedirectStandardError = false,
+                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             }
@@ -82,6 +83,7 @@ public class WebcamStreamer : IHostedService
     public void Start()
     {
         _ffmpeg.Start();
+        Task.Run(() => DrainFfmpegStderr(_cts.Token));
 
         Task.Run(() => CaptureLoop(_cts.Token));
         Task.Run(() => DetectionLoop(_cts.Token));
@@ -89,6 +91,24 @@ public class WebcamStreamer : IHostedService
 
         if (OperatingSystem.IsWindows())
             DebugWindow.Start();
+    }
+
+    private async Task DrainFfmpegStderr(CancellationToken token)
+    {
+        var stderr = _ffmpeg.StandardError.BaseStream;
+        var buffer = new byte[4096];
+        try
+        {
+            while (!token.IsCancellationRequested && !_ffmpeg.HasExited)
+            {
+                int read = await stderr.ReadAsync(buffer, token);
+                if (read <= 0)
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private void CaptureLoop(CancellationToken token)

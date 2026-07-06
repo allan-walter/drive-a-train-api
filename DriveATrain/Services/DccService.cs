@@ -33,14 +33,13 @@ public class DccService : IHostedService
 
     public void SetLimits(SpeedLimit forwardSpeed, SpeedLimit backwardSpeed)
     {
-        bool change = ForwardLimit != forwardSpeed || ReverseLimit != backwardSpeed;
+        if (ForwardLimit == forwardSpeed && ReverseLimit == backwardSpeed)
+            return;
+
         ForwardLimit = forwardSpeed;
         ReverseLimit = backwardSpeed;
 
-        // if (change) {
-        _ = Task.Run(async () => await SetThrottleAsync());
-        // Send to the frontend so it shows the user it changed
-        // }
+        _ = SetThrottleAsync();
     }
 
     public void Connect()
