@@ -25,12 +25,15 @@ public class DetectorService(
 
     public void Process(Mat frame)
     {
-        var markers = try4.GetMarkerSeeds(frame.Clone());
+        var debugFrame = frame.Clone();
+        var markers = try4.GetMarkerSeeds(frame.Clone(), debugFrame);
         var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
-        var dirMarkers = try4.IdentifyDirectionMarkers(frame.Clone(), markers, combinedMask);
-        var units = try4.GetRects(frame.Clone(), markers, dirMarkers);
+        
+        var dirMarkers = try4.IdentifyDirectionMarkers(frame, debugFrame, markers, combinedMask);
+        var units = try4.GetRects(frame, debugFrame, markers, dirMarkers);
         var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
+        // DebugWindow.Show("debug frame", debugFrame);
         if (train != null)
         {
             var limits = limiter.ProcessLimits(frame, train.Front, train.Back);
@@ -44,7 +47,7 @@ public class DetectorService(
 
         var throttleLimits = dccService.GetThrottleLimits();
         var railUnits = units.Select(u => new RailUnitGet(u)).ToList();
-        
+
         // var railUnits = new List<RailUnitGet>();
         // railUnits = RailUnitMocks.GetMocks(config.Units.First(u => u.Type == UnitType.Locomotive),
         //     config.Units.First(u => u.Type == UnitType.Wagon));

@@ -67,6 +67,86 @@ public class Try4
         return first ?? throw new Exception("No frames were trained.");
     }
 
+    public List<MarkerDef> GetMarkerSeeds(Mat frame, Mat debugFrame)
+    {
+        // Debug the go zone
+        double goZoneAlpha = 0.2;
+        Cv2.AddWeighted(goZone, goZoneAlpha, debugFrame, 1 - goZoneAlpha, 1, debugFrame);
+        
+        Cv2.GaussianBlur(frame, frame, Blur, 0);
+
+        var res = GetDiffMask(frame);
+
+
+        Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
+
+        // Erosion then dilation, renmove noise
+        var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(3, 3));
+        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
+
+
+        // Dilation then eriosion, fill gaps and join blobs
+        var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
+        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
+
+
+        // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
+        kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
+        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
+
+
+        var cutout = new Mat();
+        var blurredFrame = new Mat();
+        // A bit of blur so there is more of an average color to find
+        Cv2.GaussianBlur(frame, blurredFrame, new Size(21, 21), 0);
+        blurredFrame.CopyTo(cutout, res);
+        //
+
+        var colorMasks =
+            SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
+
+        var markerDefs = new List<MarkerDef>();
+
+        for (int index = 0; index < colorMasks.Count; index++)
+        {
+            var mask = colorMasks[index];
+
+            var center = GetCenterOfShape(mask);
+            var color = LookupColor.Colors[index];
+
+
+            Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
+                RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+
+            foreach (var contour in contours)
+            {
+                var contourOverlay = debugFrame.Clone();
+                Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
+                double alpha = 0.5;
+                Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
+            }
+
+            if (contours.Length != 1)
+                continue; // mirrors `return@forEachIndexed`
+
+            if (center != null)
+            {
+                markerDefs.Add(new MarkerDef(
+                    -1,
+                    color,
+                    index == 0
+                        ? config.Units.ElementAtOrDefault(0)
+                        : config.Units.ElementAtOrDefault(1),
+                    center.Value.ToPoint(),
+                    mask,
+                    contours[0]
+                ));
+            }
+        }
+
+        return markerDefs;
+    }
+    
     private Mat GetDiffMask(Mat liveFrame)
     {
         var fgMask = new Mat();
@@ -80,77 +160,7 @@ public class Try4
         return cut;
     }
 
-    public List<MarkerDef> GetMarkerSeeds(Mat frame)
-    {
-        Cv2.GaussianBlur(frame, frame, Blur, 0);
-
-        var res = GetDiffMask(frame);
-
-        // DebugWindow.Show("raw diff", res.Clone());
-
-        Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
-
-        // Erosion then dilation, renmove noise
-        var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(3, 3));
-        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
-
-        // DebugWindow.Show("step 0", res.Clone());
-
-        // Dilation then eriosion, fill gaps and join blobs
-        var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
-        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
-
-        // DebugWindow.Show("step 1", res.Clone());
-
-        // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
-        kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
-        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
-
-        // DebugWindow.Show("step 2", res.Clone());
-
-
-        // Convex is no good if the train is on a curve
-        // var convexMask = ConvexHullMask(res);
-
-        var cutout = new Mat();
-        var blurredFrame = new Mat();
-        // A bit of blur so there is more of an average color to find
-        Cv2.GaussianBlur(frame, blurredFrame, new Size(21, 21), 0);
-        blurredFrame.CopyTo(cutout, res);
-        //
-        // DebugWindow.Show("cutout", cutout);
-
-        var colorMasks =
-            SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
-
-        var markerDefs = new List<MarkerDef>();
-
-        for (int index = 0; index < colorMasks.Count; index++)
-        {
-            var mask = colorMasks[index];
-            // DebugWindow.Show($"mask {index}", mask);
-
-            var center = GetCenterOfShape(mask);
-            var color = LookupColor.Colors[index];
-
-            if (center != null)
-            {
-                markerDefs.Add(new MarkerDef(
-                    -1,
-                    color,
-                    index == 0
-                        ? config.Units.ElementAtOrDefault(0)
-                        : config.Units.ElementAtOrDefault(1),
-                    center.Value.ToPoint(),
-                    mask
-                ));
-            }
-        }
-
-        return markerDefs;
-    }
-
-    public List<Point> IdentifyDirectionMarkers(Mat frame, List<MarkerDef> blobs, Mat mask)
+    public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, List<MarkerDef> blobs, Mat mask)
     {
         var hsv = new Mat();
         Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
@@ -167,8 +177,6 @@ public class Try4
         // var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
         // Cv2.MorphologyEx(debug, debug, MorphTypes.Open, kernel);
 
-        // DebugWindow.Show("frame", frame);
-        // DebugWindow.Show("dir markers", debug);
 
         var cutout = new Mat();
         debug.CopyTo(cutout, mask);
@@ -181,7 +189,7 @@ public class Try4
         foreach (var contour in contours)
         {
             var area = Cv2.ContourArea(contour);
-            Cv2.DrawContours(frame, new[] { contour }, -1, Scalar.Orange, -1);
+            Cv2.DrawContours(debugFrame, new[] { contour }, -1, Scalar.Orange, -1);
 
             var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
             var rect = Cv2.MinAreaRect(contour2f);
@@ -189,34 +197,28 @@ public class Try4
 
             if (area > 23 && area < 60)
             {
-                Cv2.Circle(frame, center.ToPoint(), 3, Scalar.Green, -1);
+                Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Green, -1);
             }
             else
             {
-                Cv2.Circle(frame, center.ToPoint(), 3, Scalar.Red, -1);
+                Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Red, -1);
             }
 
-            Cv2.PutText(frame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 0.5, Scalar.Orange, 2);
+            Cv2.PutText(debugFrame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 0.5,
+                Scalar.Orange, 2);
         }
-        
-        // DebugWindow.Show("debug frame", frame);
+
 
         return markers;
     }
 
-    public List<UnitMarkerResponse> GetRects(Mat frame, List<MarkerDef> markers, List<Point> dirMarkers)
+    public List<UnitMarkerResponse> GetRects(Mat frame, Mat debugFrame, List<MarkerDef> markers, List<Point> dirMarkers)
     {
         var res = new List<UnitMarkerResponse>();
 
         foreach (var marker in markers)
         {
-            Cv2.FindContours(marker.Mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
-                RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-
-            if (contours.Length != 1)
-                continue; // mirrors `return@forEachIndexed`
-
-            var contour2f = contours[0].Select(p => new Point(p.X, p.Y)).ToArray();
+            var contour2f = marker.Contour.Select(p => new Point(p.X, p.Y)).ToArray();
             var rotatedRect = Cv2.MinAreaRect(contour2f);
             var boxPoints = rotatedRect.Points(); // Point2f[4]
 
@@ -224,7 +226,7 @@ public class Try4
 
             for (int i = 0; i < 4; i++)
             {
-                Cv2.Line(frame,
+                Cv2.Line(debugFrame,
                     new Point((int)boxPoints[i].X, (int)boxPoints[i].Y),
                     new Point((int)boxPoints[(i + 1) % 4].X, (int)boxPoints[(i + 1) % 4].Y),
                     marker.Color.SingleColor, 2);
@@ -273,25 +275,6 @@ public class Try4
 
 
         return res;
-    }
-
-    // ---- Helpers referenced but not shown in the original snippet ----
-    // Port these to match your actual Kotlin implementations.
-
-    private Mat ConvexHullMask(Mat mask)
-    {
-        Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
-            RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-
-        var result = Mat.Zeros(mask.Size(), mask.Type()).ToMat();
-
-        var allPoints = contours.SelectMany(c => c).ToArray();
-        if (allPoints.Length == 0) return result;
-
-        var hull = Cv2.ConvexHull(allPoints);
-        Cv2.FillConvexPoly(result, hull, new Scalar(255));
-
-        return result;
     }
 
     private List<Mat> SplitMaskByNearestColorRegion(Mat frame, Mat mask, List<Scalar> targetColors, int tolerance = 20)
