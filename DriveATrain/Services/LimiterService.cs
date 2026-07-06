@@ -16,11 +16,10 @@ public class LimiterService
 
     public Vector2Int GetNearestBlack(Transform to, Mat mask)
     {
-        // Find all black pixel locations: invert so black -> white/non-zero, then findNonZero
-        var invertedBinary = new Mat();
+        using var invertedBinary = new Mat();
         Cv2.BitwiseNot(mask, invertedBinary);
 
-        var blackPixels = new Mat();
+        using var blackPixels = new Mat();
         Cv2.FindNonZero(invertedBinary, blackPixels);
 
         // Find the closest one to the dot
@@ -50,13 +49,10 @@ public class LimiterService
 
     public SpeedResult ProcessLimits(Mat frame, Transform front, Transform back)
     {
-        // Load the no-go zone image (black = obstacle)
-        // Threshold: make black pixels = 0, everything else = 255
-        var binary = new Mat();
-        // Free space (white road) stays 255, dark obstacles become 0
+        using var binary = new Mat();
         Cv2.Threshold(blocks, binary, 254.0, 255.0, ThresholdTypes.Binary);
 
-        var distMap = new Mat();
+        using var distMap = new Mat();
         Cv2.DistanceTransform(binary, distMap, DistanceTypes.L2, DistanceTransformMasks.Mask5);
 
         var limits = new SpeedResult();

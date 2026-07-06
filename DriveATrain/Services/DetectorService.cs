@@ -27,17 +27,20 @@ public class DetectorService(
 
     public void Process(Mat frame)
     {
-        var debugFrame = frame.Clone();
-        var markers = try4.GetMarkerSeeds(frame.Clone(), debugFrame);
+        using var processingFrame = frame.Clone();
+        using var debugFrame = frame.Clone();
+        var markers = try4.GetMarkerSeeds(processingFrame, debugFrame);
 
-        var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
+        try
+        {
+            using var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
 
-        var dirMarkers = try4.IdentifyDirectionMarkers(frame, debugFrame, markers, combinedMask);
-        var units = try4.GetRects(frame, debugFrame, markers, dirMarkers);
-        
-        debugFrame.CopyTo(currentDebugFrame);
-        
-        var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
+            var dirMarkers = try4.IdentifyDirectionMarkers(frame, debugFrame, markers, combinedMask);
+            var units = try4.GetRects(frame, debugFrame, markers, dirMarkers);
+
+            debugFrame.CopyTo(currentDebugFrame);
+
+            var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
         // DebugWindow.Show("debug frame", debugFrame);
         if (train != null)
@@ -67,7 +70,13 @@ public class DetectorService(
             ReverseValue = throttleLimits.Reverse,
         });
 
-        unitHub.Clients.All.SendAsync("connections", GetConnections(railUnits));
+            unitHub.Clients.All.SendAsync("connections", GetConnections(railUnits));
+        }
+        finally
+        {
+            foreach (var marker in markers)
+                marker.Mask.Dispose();
+        }
     }
 
     private Vector2Int GetMidpoint(Vector2Int p1, Vector2Int p2)

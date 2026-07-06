@@ -71,43 +71,38 @@ public class Try4
     {
         // Debug the go zone
         double goZoneAlpha = 0.2;
-        Mat goZoneColor = new Mat();
+        using var goZoneColor = new Mat();
         Cv2.CvtColor(goZone, goZoneColor, ColorConversionCodes.GRAY2BGR);
         Cv2.AddWeighted(goZoneColor, goZoneAlpha, debugFrame, 1 - goZoneAlpha, 1, debugFrame);
         
         Cv2.GaussianBlur(frame, frame, Blur, 0);
 
-        var res = GetDiffMask(frame);
-
+        using var res = GetDiffMask(frame);
 
         Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
 
         // Erosion then dilation, renmove noise
-        var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(3, 3));
+        using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(3, 3));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
-
 
         // Dilation then eriosion, fill gaps and join blobs
-        var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
+        using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
         Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
 
-
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
-        kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
-        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
+        using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
+        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2);
 
-
-        var cutout = new Mat();
-        var blurredFrame = new Mat();
+        using var cutout = new Mat();
+        using var blurredFrame = new Mat();
         // A bit of blur so there is more of an average color to find
         Cv2.GaussianBlur(frame, blurredFrame, new Size(21, 21), 0);
         blurredFrame.CopyTo(cutout, res);
-        //
 
-        var colorMasks =
-            SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
+        var colorMasks = SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
 
         var markerDefs = new List<MarkerDef>();
+        using var contourOverlay = new Mat(debugFrame.Size(), debugFrame.Type());
 
         for (int index = 0; index < colorMasks.Count; index++)
         {
@@ -116,20 +111,22 @@ public class Try4
             var center = GetCenterOfShape(mask);
             var color = LookupColor.Colors[index];
 
-
             Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
                 RetrievalModes.External, ContourApproximationModes.ApproxSimple);
 
             foreach (var contour in contours)
             {
-                var contourOverlay = debugFrame.Clone();
+                contourOverlay.SetTo(Scalar.All(0));
                 Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
                 double alpha = 0.5;
                 Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
             }
 
             if (contours.Length != 1)
-                continue; // mirrors `return@forEachIndexed`
+            {
+                mask.Dispose();
+                continue;
+            }
 
             if (center != null)
             {
@@ -144,6 +141,10 @@ public class Try4
                     contours[0]
                 ));
             }
+            else
+            {
+                mask.Dispose();
+            }
         }
 
         return markerDefs;
@@ -151,7 +152,7 @@ public class Try4
     
     private Mat GetDiffMask(Mat liveFrame)
     {
-        var fgMask = new Mat();
+        using var fgMask = new Mat();
 
         const double liveLearningRate = 0.0;
         _mog2.Apply(liveFrame, fgMask, liveLearningRate);
@@ -164,23 +165,13 @@ public class Try4
 
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, List<MarkerDef> blobs, Mat mask)
     {
-        var hsv = new Mat();
+        using var hsv = new Mat();
         Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
 
-        var debug = new Mat();
-        // Cv2.InRange(
-        //     hsv,
-        //     new Scalar(0, 0, 180),
-        //     new Scalar(180, 40, 255),
-        //     debug
-        // );
+        using var debug = new Mat();
         Cv2.InRange(hsv, new Scalar(0, 0, 120), new Scalar(180, 35, 255), debug);
 
-        // var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
-        // Cv2.MorphologyEx(debug, debug, MorphTypes.Open, kernel);
-
-
-        var cutout = new Mat();
+        using var cutout = new Mat();
         debug.CopyTo(cutout, mask);
 
         Cv2.FindContours(cutout, out Point[][] contours, out HierarchyIndex[] hierarchy,
@@ -298,24 +289,21 @@ public class Try4
                 Math.Min(255, color.Val1 + tolerance),
                 Math.Min(255, color.Val2 + tolerance));
 
-            Mat rangeMask = new Mat();
+            using var rangeMask = new Mat();
             Cv2.InRange(frame, lower, upper, rangeMask);
 
-            Mat restricted = new Mat();
-            Cv2.BitwiseAnd(rangeMask, mask, restricted);
-            colorMasks[i] = restricted;
+            colorMasks[i] = new Mat();
+            Cv2.BitwiseAnd(rangeMask, mask, colorMasks[i]);
         }
 
         // Step 2: distance transform per color
-        // (distance from every pixel to the nearest pixel belonging to that color region)
         for (int i = 0; i < n; i++)
         {
-            Mat inv = new Mat();
-            Cv2.BitwiseNot(colorMasks[i], inv); // color pixels -> 0, everything else -> 255
+            using var inv = new Mat();
+            Cv2.BitwiseNot(colorMasks[i], inv);
 
-            Mat dist = new Mat();
-            Cv2.DistanceTransform(inv, dist, DistanceTypes.L2, DistanceTransformMasks.Mask5);
-            distMaps[i] = dist;
+            distMaps[i] = new Mat();
+            Cv2.DistanceTransform(inv, distMaps[i], DistanceTypes.L2, DistanceTransformMasks.Mask5);
         }
 
         // Step 3: assign every pixel in the original mask to its nearest color region
@@ -347,6 +335,11 @@ public class Try4
                     results[bestIndex].Set(y, x, (byte)255);
             }
         }
+
+        foreach (var cm in colorMasks)
+            cm?.Dispose();
+        foreach (var dm in distMaps)
+            dm?.Dispose();
 
         return results;
     }

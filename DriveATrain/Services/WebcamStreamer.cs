@@ -87,7 +87,8 @@ public class WebcamStreamer : IHostedService
         Task.Run(() => DetectionLoop(_cts.Token));
         Task.Run(() => BroadcastLoop(_cts.Token));
 
-        DebugWindow.Start();
+        if (OperatingSystem.IsWindows())
+            DebugWindow.Start();
     }
 
     private void CaptureLoop(CancellationToken token)
