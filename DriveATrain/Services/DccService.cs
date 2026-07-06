@@ -150,6 +150,8 @@ public class DccService : IHostedService
             throttleValue = Math.Min(throttleValue, limits.Reverse);
         }
 
+        throttleValue = Math.Min(throttleValue, config.MaxSpeed);
+
         if (!Port.IsOpen)
         {
             Connect();

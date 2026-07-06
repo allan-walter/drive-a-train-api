@@ -12,6 +12,7 @@ public class Config
 public class DccConfig
 {
     public string Port { get; set; }
+    public double MaxSpeed { get; set; }
     public int LocoAddress { get; set; }
     public double SlowThrottleValue { get; set; }
 }

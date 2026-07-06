@@ -4,7 +4,7 @@ namespace DriveATrain.Hubs;
 
 using Microsoft.AspNetCore.SignalR;
 
-public class InfoHub : Hub
+public class InfoHub(Config config) : Hub
 {
     public override Task OnConnectedAsync()
     {
@@ -12,6 +12,7 @@ public class InfoHub : Hub
         {
             width = DetectorService.CAMERA_WIDTH,
             height = DetectorService.CAMERA_HEIGHT,
+            maxThrottle = config.Dcc.MaxSpeed
         };
 
         Clients.All.SendAsync("info", data);
