@@ -5,20 +5,19 @@ using System.Net.WebSockets;
 using DriveATrain;
 using DriveATrain.Services;
 
-public class DebugStreamer : IHostedService
+public class DebugStreamer : IHostedService, IDisposable
 {
     private readonly Process _ffmpeg;
-    private CancellationTokenSource _cts = new();
-
+    private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
-    private readonly DetectorService _detectorService;
-
+    private readonly CaptureService _captureService;
     private byte[] _streamBuffer = [];
+    private Task? _captureTask;
+    private Task? _broadcastTask;
 
-    public DebugStreamer(Config config, DetectorService detectorService)
+    public DebugStreamer(Config config, CaptureService captureService)
     {
-        _detectorService = detectorService;
-
+        _captureService = captureService;
         var streamSize = $"{DetectorService.STREAM_WIDTH}x{DetectorService.STREAM_HEIGHT}";
         _ffmpeg = new Process
         {
@@ -42,7 +41,6 @@ public class DebugStreamer : IHostedService
     {
         var id = Guid.NewGuid();
         _clients[id] = socket;
-
         var buffer = new byte[1024];
         try
         {
@@ -63,12 +61,41 @@ public class DebugStreamer : IHostedService
         }
     }
 
-    public void Start()
+    public Task StartAsync(CancellationToken cancellationToken)
     {
         _ffmpeg.Start();
+        _captureTask = Task.Run(() => CaptureLoop(_cts.Token));
+        _broadcastTask = Task.Run(() => BroadcastLoop(_cts.Token));
+        return Task.CompletedTask;
+    }
 
-        Task.Run(() => CaptureLoop(_cts.Token));
-        Task.Run(() => BroadcastLoop(_cts.Token));
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _cts.CancelAsync();
+
+        try
+        {
+            _ffmpeg.StandardInput.Close();
+        }
+        catch
+        {
+            /* already closed/exited */
+        }
+
+        if (_captureTask != null) await Task.WhenAny(_captureTask, Task.Delay(2000));
+        if (_broadcastTask != null) await Task.WhenAny(_broadcastTask, Task.Delay(2000));
+
+        if (!_ffmpeg.HasExited)
+        {
+            try
+            {
+                _ffmpeg.Kill();
+            }
+            catch
+            {
+                /* already gone */
+            }
+        }
     }
 
     private void CaptureLoop(CancellationToken token)
@@ -80,13 +107,19 @@ public class DebugStreamer : IHostedService
 
         while (!token.IsCancellationRequested)
         {
-            if (_detectorService.currentDebugFrame.Empty())
+            if (!_captureService.TryGetLatestFrame(frame) || frame.Empty())
                 continue;
-            
-            _detectorService.currentDebugFrame.CopyTo(frame);
 
             System.Runtime.InteropServices.Marshal.Copy(frame.Data, _streamBuffer, 0, frameBytes);
-            stdin.Write(_streamBuffer, 0, frameBytes);
+
+            try
+            {
+                stdin.Write(_streamBuffer, 0, frameBytes);
+            }
+            catch
+            {
+                break;
+            } // ffmpeg pipe closed/dead
         }
     }
 
@@ -94,20 +127,26 @@ public class DebugStreamer : IHostedService
     {
         var stdout = _ffmpeg.StandardOutput.BaseStream;
         var buffer = new byte[64 * 1024];
-
         while (!token.IsCancellationRequested)
         {
-            int read = await stdout.ReadAsync(buffer, 0, buffer.Length, token);
-            if (read <= 0) continue;
+            int read;
+            try
+            {
+                read = await stdout.ReadAsync(buffer, 0, buffer.Length, token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            if (read <= 0) break; // ffmpeg exited
 
             var chunk = buffer.AsMemory(0, read);
             var sends = new List<Task>(_clients.Count);
-
             foreach (var kvp in _clients)
             {
                 var socket = kvp.Value;
                 if (socket.State != WebSocketState.Open) continue;
-
                 sends.Add(SendToClientAsync(kvp.Key, socket, chunk, token));
             }
 
@@ -128,29 +167,21 @@ public class DebugStreamer : IHostedService
         }
     }
 
-    public void Stop()
+    public void Dispose()
     {
         _cts.Cancel();
-        try
+        _cts.Dispose();
+        if (!_ffmpeg.HasExited)
         {
-            _ffmpeg.StandardInput.Close();
+            try
+            {
+                _ffmpeg.Kill();
+            }
+            catch
+            {
+            }
         }
-        catch
-        {
-        }
 
-        if (!_ffmpeg.HasExited) _ffmpeg.Kill();
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        Start();
-        return Task.CompletedTask;
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
-        Stop();
-        return Task.CompletedTask;
+        _ffmpeg.Dispose();
     }
 }

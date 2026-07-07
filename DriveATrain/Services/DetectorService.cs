@@ -31,6 +31,7 @@ public class DetectorService(
 
     public void Process(Mat frame)
     {
+        return;
         // DebugWindow.Show("test frame", frame.Clone());
         using var processingFrame = frame.Clone();
         using var debugFrame = frame.Clone();

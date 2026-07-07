@@ -86,7 +86,6 @@ public class WebcamStreamer : IHostedService
         _ffmpeg.Start();
         Task.Run(() => DrainFfmpegStderr(_cts.Token));
 
-        Task.Run(() => CaptureLoop(_cts.Token));
         Task.Run(() => DetectionLoop(_cts.Token));
         Task.Run(() => BroadcastLoop(_cts.Token));
 
@@ -112,37 +111,10 @@ public class WebcamStreamer : IHostedService
         }
     }
 
-    private void CaptureLoop(CancellationToken token)
+
+    private async Task DetectionLoop(CancellationToken token)  
     {
-        using var frame = new Mat();
-        var stdin = _ffmpeg.StandardInput.BaseStream;
-        var frameBytes = DetectorService.STREAM_WIDTH * DetectorService.STREAM_HEIGHT * 3;
-        _streamBuffer = new byte[frameBytes];
-
-        while (!token.IsCancellationRequested)
-        {
-            if (!_capture.Read(frame) || frame.Empty())
-                continue;
-
-            Cv2.Flip(frame, frame, FlipMode.Y);
-
-            System.Runtime.InteropServices.Marshal.Copy(frame.Data, _streamBuffer, 0, frameBytes);
-            stdin.Write(_streamBuffer, 0, frameBytes);
-
-            if (_detectionFrames.Writer.TryWrite(frame.Clone()))
-                continue;
-
-            // Channel full — drop the oldest pending frame and enqueue the latest.
-            while (_detectionFrames.Reader.TryRead(out var dropped))
-                dropped.Dispose();
-
-            _detectionFrames.Writer.TryWrite(frame.Clone());
-        }
-    }
-
-    private async Task DetectionLoop(CancellationToken token)
-    {
-        try
+        try  
         {
             await foreach (var frame in _detectionFrames.Reader.ReadAllAsync(token))
             {
