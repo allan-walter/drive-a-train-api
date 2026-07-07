@@ -14,6 +14,7 @@ public class WebcamStreamer : IHostedService
 
     private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
     private readonly DetectorService _detectorService;
+
     private readonly Channel<Mat> _detectionFrames = Channel.CreateBounded<Mat>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
 
@@ -89,8 +90,8 @@ public class WebcamStreamer : IHostedService
         Task.Run(() => DetectionLoop(_cts.Token));
         Task.Run(() => BroadcastLoop(_cts.Token));
 
-        if (OperatingSystem.IsWindows())
-            DebugWindow.Start();
+        // if (OperatingSystem.IsWindows())
+        DebugWindow.Start();
     }
 
     private async Task DrainFfmpegStderr(CancellationToken token)

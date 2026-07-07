@@ -87,30 +87,24 @@ public class DccService : IHostedService
     }
 
     // Run the function for a short time then turn off automatically. Used for couplers
-    public void RunCoupleFunction(List<Uncouple> targets)
+    public void RunCoupleFunction(Hubs.Uncouple uncouple)
     {
         if (!Port.IsOpen)
         {
             Connect();
         }
 
-        foreach (var target in targets)
+        // Function mode, address 3, function 0, 1 = on
+        var onBytes = System.Text.Encoding.UTF8.GetBytes($"<F {uncouple.Address} {uncouple.Function} 1>\n");
+        Port.Write(onBytes, 0, onBytes.Length);
+
+        _ = Task.Run(async () =>
         {
-            int address = target.Address;
-            int function = target.Function;
-
-            // Function mode, address 3, function 0, 1 = on
-            var onBytes = System.Text.Encoding.UTF8.GetBytes($"<F {address} {function} 1>\n");
-            Port.Write(onBytes, 0, onBytes.Length);
-
-            _ = Task.Run(async () =>
-            {
-                // Wait for user to drive away
-                await Task.Delay(TimeSpan.FromMilliseconds(2000));
-                var offBytes = System.Text.Encoding.UTF8.GetBytes($"<F {address} {function} 0>\n");
-                Port.Write(offBytes, 0, offBytes.Length);
-            });
-        }
+            // Wait for user to drive away
+            await Task.Delay(TimeSpan.FromMilliseconds(2000));
+            var offBytes = System.Text.Encoding.UTF8.GetBytes($"<F {uncouple.Address} {uncouple.Function} 0>\n");
+            Port.Write(offBytes, 0, offBytes.Length);
+        });
     }
 
     public LimitValues GetThrottleLimits()

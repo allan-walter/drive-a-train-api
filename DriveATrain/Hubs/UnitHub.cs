@@ -10,9 +10,9 @@ public class UnitHub(DccService dccService) : Hub
         return base.OnConnectedAsync();
     }
 
-    public void Uncouple(List<Uncouple> targets)
+    public void Uncouple(Uncouple uncouple)
     {
-        dccService.RunCoupleFunction(targets);
+        dccService.RunCoupleFunction(uncouple);
     }
 }
 

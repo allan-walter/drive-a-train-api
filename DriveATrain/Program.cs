@@ -30,7 +30,7 @@ builder.Services.AddSingleton<LimiterService>();
 builder.Services.AddSingleton<WebcamStreamer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebcamStreamer>());
 builder.Services.AddSingleton<DebugStreamer>();
-// builder.Services.AddHostedService(sp => sp.GetRequiredService<DebugStreamer>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DebugStreamer>());
 
 builder.Services.AddSignalR();
 builder.Services.AddDbContext<AppDbContext>(options =>

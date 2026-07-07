@@ -74,7 +74,7 @@ public class Try4
         using var goZoneColor = new Mat();
         Cv2.CvtColor(goZone, goZoneColor, ColorConversionCodes.GRAY2BGR);
         Cv2.AddWeighted(goZoneColor, goZoneAlpha, debugFrame, 1 - goZoneAlpha, 1, debugFrame);
-        
+
         Cv2.GaussianBlur(frame, frame, Blur, 0);
 
         using var res = GetDiffMask(frame);
@@ -99,7 +99,8 @@ public class Try4
         Cv2.GaussianBlur(frame, blurredFrame, new Size(21, 21), 0);
         blurredFrame.CopyTo(cutout, res);
 
-        var colorMasks = SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
+        var colorMasks =
+            SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
 
         var markerDefs = new List<MarkerDef>();
         using var contourOverlay = new Mat(debugFrame.Size(), debugFrame.Type());
@@ -117,16 +118,33 @@ public class Try4
                 Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
                     RetrievalModes.External, ContourApproximationModes.ApproxSimple);
 
+// Start with a blank mask, same size/type as original
+                Mat filteredMask = Mat.Zeros(mask.Size(), mask.Type());
+                Point[] contourMatch = [];
+
                 foreach (var contour in contours)
                 {
-                    contourOverlay.SetTo(Scalar.All(0));
-                    Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
-                    double alpha = 0.5;
-                    Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
+                    // TODO gross but works for now to filter out extra detected stuff. In future when background is not yellow should be easier to only detect one color
+                    double area = Cv2.ContourArea(contour);
+                    if (area <= 3000)
+                        continue;
+
+                    contourMatch = contour;
+
+                    // Draw this contour onto the filtered mask (filled white)
+                    Cv2.FillPoly(filteredMask, new[] { contour }, Scalar.All(255));
+
+                    // // Overlay drawing (unchanged from before)
+                    // contourOverlay.SetTo(Scalar.All(0));
+                    // Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
+                    // double alpha = 0.5;
+                    // Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
                 }
 
-                if (contours.Length != 1)
-                    continue;
+// Replace the original mask with the filtered one
+                mask = filteredMask;
+                
+                // DebugWindow.Show("mask " + index, mask);
 
                 if (center != null)
                 {
@@ -139,7 +157,7 @@ public class Try4
                             : config.Units.ElementAtOrDefault(1),
                         center.Value.ToPoint(),
                         mask,
-                        contours[0]
+                        contourMatch
                     ));
                 }
             }
@@ -155,7 +173,7 @@ public class Try4
 
         return markerDefs;
     }
-    
+
     private Mat GetDiffMask(Mat liveFrame)
     {
         using var fgMask = new Mat();
@@ -194,7 +212,7 @@ public class Try4
             var rect = Cv2.MinAreaRect(contour2f);
             var center = rect.Center;
 
-            if (area > 23 && area < 60)
+            if (area > 13 && area < 30)
             {
                 Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Green, -1);
             }
@@ -203,7 +221,7 @@ public class Try4
                 Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Red, -1);
             }
 
-            Cv2.PutText(debugFrame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 0.5,
+            Cv2.PutText(debugFrame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 1,
                 Scalar.Orange, 2);
         }
 
@@ -218,6 +236,7 @@ public class Try4
         foreach (var marker in markers)
         {
             var contour2f = marker.Contour.Select(p => new Point(p.X, p.Y)).ToArray();
+            var test = Cv2.ContourArea(marker.Contour);
             var rotatedRect = Cv2.MinAreaRect(contour2f);
             var boxPoints = rotatedRect.Points(); // Point2f[4]
 
@@ -228,7 +247,7 @@ public class Try4
                 Cv2.Line(debugFrame,
                     new Point((int)boxPoints[i].X, (int)boxPoints[i].Y),
                     new Point((int)boxPoints[(i + 1) % 4].X, (int)boxPoints[(i + 1) % 4].Y),
-                    marker.Color.SingleColor, 2);
+                    Scalar.Red, 5);
             }
 
             Point? frontDirMarker = dirMarkers.FirstOrDefault(p =>

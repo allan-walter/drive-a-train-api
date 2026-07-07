@@ -26,11 +26,12 @@ public class DetectorService(
     public Mat currentDebugFrame = new Mat();
 
     private LiveData? _pendingLiveData;
-    private List<RailConnection>? _pendingConnections;
+    private List<Uncouple>? _pendingConnections;
     private int _publishScheduled;
 
     public void Process(Mat frame)
     {
+        // DebugWindow.Show("test frame", frame.Clone());
         using var processingFrame = frame.Clone();
         using var debugFrame = frame.Clone();
         var markers = try4.GetMarkerSeeds(processingFrame, debugFrame);
@@ -46,24 +47,24 @@ public class DetectorService(
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
-        // DebugWindow.Show("debug frame", debugFrame);
-        if (train != null)
-        {
-            var limits = limiter.ProcessLimits(frame, train.Front, train.Back);
-            dccService.SetLimits(limits.Forward, limits.Reverse);
-        }
-        else
-        {
-            // _dccService.SetLimits(SpeedLimit.Stop, SpeedLimit.Stop);
-            dccService.SetLimits(SpeedLimit.NORMAL, SpeedLimit.NORMAL);
-        }
+            // DebugWindow.Show("debug frame", debugFrame);
+            if (train != null)
+            {
+                var limits = limiter.ProcessLimits(frame, train.Front, train.Back);
+                dccService.SetLimits(limits.Forward, limits.Reverse);
+            }
+            else
+            {
+                // _dccService.SetLimits(SpeedLimit.Stop, SpeedLimit.Stop);
+                dccService.SetLimits(SpeedLimit.NORMAL, SpeedLimit.NORMAL);
+            }
 
-        var throttleLimits = dccService.GetThrottleLimits();
-        var railUnits = units.Select(u => new RailUnitGet(u)).ToList();
+            var throttleLimits = dccService.GetThrottleLimits();
+            var railUnits = units.Select(u => new RailUnitGet(u)).ToList();
 
-        // var railUnits = new List<RailUnitGet>();
-        // railUnits = RailUnitMocks.GetMocks(config.Units.First(u => u.Type == UnitType.Locomotive),
-        //     config.Units.First(u => u.Type == UnitType.Wagon));
+            // var railUnits = new List<RailUnitGet>();
+            // railUnits = RailUnitMocks.GetMocks(config.Units.First(u => u.Type == UnitType.Locomotive),
+            //     config.Units.First(u => u.Type == UnitType.Wagon));
 
             SchedulePublish(
                 new LiveData
@@ -83,7 +84,7 @@ public class DetectorService(
         }
     }
 
-    private void SchedulePublish(LiveData liveData, List<RailConnection> connections)
+    private void SchedulePublish(LiveData liveData, List<Uncouple> connections)
     {
         _pendingLiveData = liveData;
         _pendingConnections = connections;
@@ -130,134 +131,50 @@ public class DetectorService(
         );
     }
 
-    private bool ConnectionExists(List<RailConnection> connections, int addrOne, int couplerOne, int addrTwo,
-        int couplerTwo)
-    {
-        return connections.Any(c =>
-            (c.AddressOne == addrOne && c.CouplerOne == couplerOne &&
-             c.AddressTwo == addrTwo && c.CouplerTwo == couplerTwo)
-            ||
-            (c.AddressOne == addrTwo && c.CouplerOne == couplerTwo &&
-             c.AddressTwo == addrOne && c.CouplerTwo == couplerOne)
-        );
-    }
-
     // Find units that's front / back is close to each other (assume coupled) so they can be uncoupled
-    public List<RailConnection> GetConnections(List<RailUnitGet> railUnits)
+    public List<Uncouple> GetConnections(List<RailUnitGet> railUnits)
     {
-        var connections = new List<RailConnection>();
-        int maxDist = 100;
-        foreach (var unit in railUnits)
+        var connections = new List<Uncouple>();
+        const int maxDist = 100;
+
+        // Flatten every unit's two couplers into one list of (unit, index, position).
+        var couplers = railUnits
+            .SelectMany(u => new[]
+            {
+                new { Unit = u, Index = u.Def.FrontCouplerIndex, Position = u.Front.Position },
+                new { Unit = u, Index = u.Def.BackCouplerIndex, Position = u.Back.Position }
+            })
+            .ToList();
+
+        foreach (var coupler in couplers)
         {
-            RailUnitGet? frontFrontMatch = null;
-            RailUnitGet? frontBackMatch = null;
-            RailUnitGet? backFrontMatch = null;
-            RailUnitGet? backBackMatch = null;
+            double bestDist = double.MaxValue;
+            RailUnitGet? bestUnit = null;
+            int bestIndex = -1;
+            object? bestPos = null;
 
-            double minFF = double.MaxValue, minFB = double.MaxValue;
-            double minBF = double.MaxValue, minBB = double.MaxValue;
-
-// Cache target positions
-            var targetFrontPos = unit.Front.Position;
-            var targetBackPos = unit.Back.Position;
-
-            foreach (var u in railUnits)
+            foreach (var other in couplers)
             {
-                if (u == unit) continue;
+                if (other.Unit == coupler.Unit) continue; // skip same unit's own couplers
 
-                var uFrontPos = u.Front.Position;
-                var uBackPos = u.Back.Position;
-
-                // ---- TARGET FRONT CONNECTIONS ----
-                // Front to Front
-                double distFF = uFrontPos.DistanceTo(targetFrontPos);
-                if (distFF <= maxDist && distFF < minFF)
+                double dist = other.Position.DistanceTo(coupler.Position);
+                if (dist <= maxDist && dist < bestDist)
                 {
-                    minFF = distFF;
-                    frontFrontMatch = u;
-                }
-
-                // Front to Back
-                double distFB = uBackPos.DistanceTo(targetFrontPos);
-                if (distFB <= maxDist && distFB < minFB)
-                {
-                    minFB = distFB;
-                    frontBackMatch = u;
-                }
-
-                // ---- TARGET BACK CONNECTIONS ----
-                // Back to Front
-                double distBF = uFrontPos.DistanceTo(targetBackPos);
-                if (distBF <= maxDist && distBF < minBF)
-                {
-                    minBF = distBF;
-                    backFrontMatch = u;
-                }
-
-                // Back to Back
-                double distBB = uBackPos.DistanceTo(targetBackPos);
-                if (distBB <= maxDist && distBB < minBB)
-                {
-                    minBB = distBB;
-                    backBackMatch = u;
+                    bestDist = dist;
+                    bestUnit = other.Unit;
+                    bestIndex = other.Index;
+                    bestPos = other.Position;
                 }
             }
 
-// ---- ADD CONNECTIONS TO LIST ----
-
-            if (frontFrontMatch != null &&
-                !ConnectionExists(connections, unit.Def.Address, unit.Def.FrontCouplerIndex,
-                    frontFrontMatch.Def.Address, frontFrontMatch.Def.FrontCouplerIndex))
+            if (bestUnit != null && !connections.Any(c =>
+                    c.Address == coupler.Unit.Def.Address || c.Address == bestUnit.Def.Address))
             {
-                connections.Add(new RailConnection
+                connections.Add(new Uncouple
                 {
-                    AddressOne = unit.Def.Address,
-                    CouplerOne = unit.Def.FrontCouplerIndex,
-                    AddressTwo = frontFrontMatch.Def.Address,
-                    CouplerTwo = frontFrontMatch.Def.FrontCouplerIndex,
-                    Midpoint = GetMidpoint(targetFrontPos, frontFrontMatch.Front.Position)
-                });
-            }
-
-            if (frontBackMatch != null &&
-                !ConnectionExists(connections, unit.Def.Address, unit.Def.FrontCouplerIndex,
-                    frontBackMatch.Def.Address, frontBackMatch.Def.BackCouplerIndex))
-            {
-                connections.Add(new RailConnection
-                {
-                    AddressOne = unit.Def.Address,
-                    CouplerOne = unit.Def.FrontCouplerIndex,
-                    AddressTwo = frontBackMatch.Def.Address,
-                    CouplerTwo = frontBackMatch.Def.BackCouplerIndex,
-                    Midpoint = GetMidpoint(targetFrontPos, frontBackMatch.Back.Position)
-                });
-            }
-
-            if (backFrontMatch != null &&
-                !ConnectionExists(connections, unit.Def.Address, unit.Def.BackCouplerIndex,
-                    backFrontMatch.Def.Address, backFrontMatch.Def.FrontCouplerIndex))
-            {
-                connections.Add(new RailConnection
-                {
-                    AddressOne = unit.Def.Address,
-                    CouplerOne = unit.Def.BackCouplerIndex,
-                    AddressTwo = backFrontMatch.Def.Address,
-                    CouplerTwo = backFrontMatch.Def.FrontCouplerIndex,
-                    Midpoint = GetMidpoint(targetBackPos, backFrontMatch.Front.Position)
-                });
-            }
-
-            if (backBackMatch != null &&
-                !ConnectionExists(connections, unit.Def.Address, unit.Def.BackCouplerIndex,
-                    backBackMatch.Def.Address, backBackMatch.Def.BackCouplerIndex))
-            {
-                connections.Add(new RailConnection
-                {
-                    AddressOne = unit.Def.Address,
-                    CouplerOne = unit.Def.BackCouplerIndex,
-                    AddressTwo = backBackMatch.Def.Address,
-                    CouplerTwo = backBackMatch.Def.BackCouplerIndex,
-                    Midpoint = GetMidpoint(targetBackPos, backBackMatch.Back.Position)
+                    Address = coupler.Unit.Def.Address,
+                    Coupler = coupler.Index,
+                    Position = GetMidpoint(coupler.Position, (dynamic)bestPos!)
                 });
             }
         }
@@ -266,14 +183,11 @@ public class DetectorService(
     }
 }
 
-public class RailConnection
+public class Uncouple
 {
-    public int AddressOne { get; set; }
-    public int AddressTwo { get; set; }
+    public int Address { get; set; }
 
-    // May not be 2 couplers, will be -1 if so
-    public int CouplerOne { get; set; }
-    public int CouplerTwo { get; set; }
+    public int Coupler { get; set; }
 
-    public Vector2Int Midpoint { get; set; }
+    public Vector2Int Position { get; set; }
 }
