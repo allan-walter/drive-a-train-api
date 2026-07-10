@@ -25,14 +25,12 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<DccService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DccService>());
 builder.Services.AddSingleton<DetectorService>();
-builder.Services.AddSingleton<Try4>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DetectorService>());
 builder.Services.AddSingleton<LimiterService>();
 builder.Services.AddSingleton<CaptureService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CaptureService>());
-builder.Services.AddSingleton<WebcamStreamer>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<WebcamStreamer>());
-builder.Services.AddSingleton<DebugStreamer>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<DebugStreamer>());
+builder.Services.AddSingleton<BroadcastService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BroadcastService>());
 
 builder.Services.AddSignalR();
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -125,20 +123,7 @@ app.Map("/ws/video/birdsEye", async context =>
     }
 
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    var streamer = app.Services.GetRequiredService<WebcamStreamer>();
-    await streamer.RegisterClientAsync(socket, context.RequestAborted);
-});
-
-app.Map("/ws/video/debug", async context =>
-{
-    if (!context.WebSockets.IsWebSocketRequest)
-    {
-        context.Response.StatusCode = 400;
-        return;
-    }
-
-    using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    var streamer = app.Services.GetRequiredService<DebugStreamer>();
+    var streamer = app.Services.GetRequiredService<BroadcastService>();
     await streamer.RegisterClientAsync(socket, context.RequestAborted);
 });
 

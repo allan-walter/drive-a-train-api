@@ -1,20 +1,46 @@
-﻿using OpenCvSharp;
+﻿using DriveATrain.Services;
+using OpenCvSharp;
 
 public static class Helpers
 {
+    
+    public static Mat MaskToTransparentOverlay(Mat mask)
+    {
+        if (mask.Type() != MatType.CV_8UC1)
+            throw new ArgumentException("Mask must be a single-channel 8-bit (CV_8UC1) binary mask.");
 
+        // Result: white where mask is white, transparent where mask is black
+        Mat result = new Mat(mask.Size(), MatType.CV_8UC4);
+
+        Mat[] channels = new Mat[]
+        {
+            mask, // B - white where mask is white
+            mask, // G
+            mask, // R
+            mask  // A - alpha follows the mask too (0 = transparent, 255 = opaque)
+        };
+
+        Cv2.Merge(channels, result);
+
+        return result;
+    }
     
     public static Mat CombineMasks(List<Mat> masks)
     {
-        if (masks.Count == 0) return new Mat();
+        var type = MatType.CV_8UC1;
+        if (masks.Count == 0)
+        {
+            // Default to 8-bit single channel (typical for masks) TODO
+            return Mat.Zeros(new Size(CaptureService.width, CaptureService.height), type).ToMat();
+        }
 
         var result = Mat.Zeros(masks[0].Size(), masks[0].Type()).ToMat();
         foreach (var mask in masks)
         {
             if (mask.Size() != result.Size())
                 throw new ArgumentException("All masks must have the same size");
-            if (mask.Type() != result.Type())
-                throw new ArgumentException("All masks must have the same type");
+            if (mask.Type() != type)
+                throw new ArgumentException("Not binary type");
 
             Cv2.BitwiseOr(result, mask, result);
         }

@@ -54,7 +54,7 @@ public class DccService : IHostedService
             Port.Open();
 
             // Wait for connect
-            Thread.Sleep(2000);
+            System.Threading.Tasks.Task.Delay(2000);
 
             PowerOn();
         }
@@ -174,7 +174,7 @@ public class DccService : IHostedService
         {
             // Turn track power OFF safely
             PowerOff();
-            Thread.Sleep(CMD_TIME); // give it time to send
+            System.Threading.Tasks.Task.Delay(CMD_TIME); // give it time to send
             Port.Close();
         }
         catch (Exception e)
