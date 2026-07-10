@@ -11,7 +11,9 @@ public class LimiterService
     public LimiterService(Config config)
     {
         this.config = config.Vision;
-        blocks = Cv2.ImRead("Images/blocks.png", ImreadModes.Grayscale);
+        blocks = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "DriveATrain",
+            "Static Images/blocks.png"), ImreadModes.Grayscale);
     }
 
     public Vector2Int GetNearestBlack(Transform to, Mat mask)

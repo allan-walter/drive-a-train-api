@@ -18,7 +18,9 @@ public class DetectorService(
 
     private static readonly Size Blur = new Size(9, 9);
 
-    Mat goZone = Cv2.ImRead("Images/go zone.png", ImreadModes.Grayscale);
+    Mat goZone = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        "DriveATrain",
+        "Static Images/go zone.png"), ImreadModes.Grayscale);
 
     private CancellationTokenSource token = new CancellationTokenSource();
 
@@ -51,12 +53,8 @@ public class DetectorService(
             using var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
             using var combinedOverlay = Helpers.MaskToTransparentOverlay(combinedMask);
 
-            Cv2.Circle(combinedOverlay, new Point(200, 200), 20, new Scalar(0, 0, 255, 255), -1);
-
-            // TODO anti aliasing not hard cutoff
-            Mat[] channels = Cv2.Split(combinedOverlay);
-            Mat alphaMask = channels[3]; // 0 or 255
-            combinedOverlay.CopyTo(debugFrame, alphaMask); // types match, no reallocation
+            Cv2.Circle(debugFrame, new Point(200, 200), 20, new Scalar(0, 200, 0, 255), -1);
+            // Blend.BlendOverlay(combinedOverlay, debugFrame);
 
             var dirMarkers = IdentifyDirectionMarkers(frame, debugFrame, combinedMask);
             var units = GetRects(frame, debugFrame, markers, dirMarkers);
