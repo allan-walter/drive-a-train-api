@@ -108,11 +108,19 @@ public class CaptureService : IHostedService
                     // Split debug layer into BGR + alpha
                     Mat[] channels = Cv2.Split(debugOverlayFrame);
                     Mat bgr = new Mat();
-                    Cv2.Merge(new Mat[] { channels[0], channels[1], channels[2] }, bgr);
-                    Mat alphaMask = channels[3]; // single channel, 0 or 255
+                    try
+                    {
+                        Cv2.Merge(new[] { channels[0], channels[1], channels[2] }, bgr);
 
-                    // Copy only where alpha > 0
-                    bgr.CopyTo(latestFrame, alphaMask);
+                        // Copy only where alpha > 0 (channels[3] = alpha, 0 or 255)
+                        bgr.CopyTo(latestFrame, channels[3]);
+                    }
+                    finally
+                    {
+                        bgr.Dispose();
+                        foreach (var channel in channels)
+                            channel.Dispose();
+                    }
                 }
             }
         }
