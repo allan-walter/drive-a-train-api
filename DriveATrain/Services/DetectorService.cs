@@ -227,6 +227,11 @@ public class DetectorService(
                 var center = GetCenterOfShape(mask);
                 var color = LookupColor.Colors[index];
 
+                // No shape for this color this frame; skip before allocating filteredMask.
+                // The original colorMasks[index] is disposed in the finally block below.
+                if (center == null)
+                    continue;
+
                 Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
                     RetrievalModes.External, ContourApproximationModes.ApproxSimple);
 
@@ -258,20 +263,17 @@ public class DetectorService(
 
                 // DebugWindow.Show("mask " + index, mask);
 
-                if (center != null)
-                {
-                    keptMasks.Add(mask);
-                    markerDefs.Add(new MarkerDef(
-                        -1,
-                        color,
-                        index == 0
-                            ? config.Units.ElementAtOrDefault(0)
-                            : config.Units.ElementAtOrDefault(1),
-                        center.Value.ToPoint(),
-                        mask,
-                        contourMatch
-                    ));
-                }
+                keptMasks.Add(mask);
+                markerDefs.Add(new MarkerDef(
+                    -1,
+                    color,
+                    index == 0
+                        ? config.Units.ElementAtOrDefault(0)
+                        : config.Units.ElementAtOrDefault(1),
+                    center.Value.ToPoint(),
+                    mask,
+                    contourMatch
+                ));
             }
         }
         finally
