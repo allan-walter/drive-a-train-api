@@ -2,10 +2,13 @@
 using System.Threading.Channels;
 using OpenCvSharp;
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using DriveATrain;
+using DriveATrain.Audio;
 using DriveATrain.Services;
+using NAudio.Wave;
 
 public class BroadcastService : IHostedService, IDisposable
 {
@@ -14,6 +17,8 @@ public class BroadcastService : IHostedService, IDisposable
     private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _pumpTask; // capture -> ffmpeg -> broadcast, all in one loop
+    private NamedPipeServerStream audioPipe;
+    private EngineAudioSource engineAudio;
 
     public BroadcastService(CaptureService captureService)
     {
@@ -28,18 +33,59 @@ public class BroadcastService : IHostedService, IDisposable
                 Arguments =
                     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
                     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
-                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+                    $"-f s16le -ar 44100 -ac 1 -i \\\\.\\pipe\\engine_audio " +
+                    $"-map 0:v -map 1:a " +
+                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 " +
+                    $"-c:a mp2 -b:a 128k -ar 44100 -ac 1 " +
+                    $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             }
         };
+
+        engineAudio = LoadEngineSound("Audio/engine.mp3");
+    }
+
+    private EngineAudioSource LoadEngineSound(string path)
+    {
+        using var reader = new AudioFileReader(path); // handles WAV/MP3, gives float samples
+
+        // Force to mono if the file is stereo — average channels
+        int channels = reader.WaveFormat.Channels;
+        int sourceRate = reader.WaveFormat.SampleRate;
+
+        var raw = new List<float>();
+        var buf = new float[reader.WaveFormat.SampleRate * channels];
+        int read;
+        while ((read = reader.Read(buf, 0, buf.Length)) > 0)
+        {
+            if (channels == 1)
+            {
+                raw.AddRange(buf.Take(read));
+            }
+            else
+            {
+                for (int i = 0; i < read; i += channels)
+                {
+                    float sum = 0;
+                    for (int c = 0; c < channels; c++) sum += buf[i + c];
+                    raw.Add(sum / channels);
+                }
+            }
+        }
+
+        return new EngineAudioSource(raw.ToArray(), sourceRate);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        audioPipe = new NamedPipeServerStream("engine_audio", PipeDirection.Out, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+
         _ffmpeg.Start();
+        audioPipe.WaitForConnectionAsync();
         // One background task drives both the capture->stdin write and stdout->clients broadcast,
         // via two inner loops on the same Task so a single Stop/Dispose path covers everything.
         _pumpTask = Task.Run(() => RunPump(_cts.Token));
@@ -96,8 +142,45 @@ public class BroadcastService : IHostedService, IDisposable
     private async Task RunPump(CancellationToken token)
     {
         var captureTask = Task.Run(() => EncodeLoop(token), token);
+        var audioTask = Task.Run(() => AudioLoop(token), token);
         var broadcastTask = BroadcastLoop(token);
-        await Task.WhenAll(captureTask, broadcastTask);
+        await Task.WhenAll(captureTask, broadcastTask, audioTask);
+    }
+
+    void AudioLoop(CancellationToken token)
+    {
+        const int outputRate = 44100;
+        const int chunkSamples = 882; // 20ms
+        var outBuffer = new short[chunkSamples];
+        var byteBuffer = new byte[chunkSamples * 2];
+        var sw = Stopwatch.StartNew();
+        var nextChunkTime = sw.Elapsed;
+        var chunkInterval = TimeSpan.FromSeconds((double)chunkSamples / outputRate);
+
+        while (!token.IsCancellationRequested)
+        {
+            var now = sw.Elapsed;
+            if (now < nextChunkTime)
+            {
+                Thread.Sleep(1);
+                continue;
+            }
+
+            nextChunkTime += chunkInterval;
+            if (nextChunkTime < now) nextChunkTime = now + chunkInterval;
+
+            engineAudio.Render(outBuffer, chunkSamples, outputRate);
+            Buffer.BlockCopy(outBuffer, 0, byteBuffer, 0, byteBuffer.Length);
+
+            try
+            {
+                audioPipe.Write(byteBuffer, 0, byteBuffer.Length);
+            }
+            catch
+            {
+                break;
+            } // ffmpeg pipe closed/dead
+        }
     }
 
     private void EncodeLoop(CancellationToken token)
