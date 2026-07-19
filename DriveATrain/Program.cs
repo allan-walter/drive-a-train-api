@@ -15,7 +15,7 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:4200") // your frontend origin
+        policy.WithOrigins(["http://localhost:4200", "http://192.168.20.201:4200"]) // your frontend origin
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -76,6 +76,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 var app = builder.Build();
+app.Urls.Add("http://0.0.0.0:5127");
 
 // Configure the HTTP request pipeline.
 

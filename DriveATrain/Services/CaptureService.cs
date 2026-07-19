@@ -14,6 +14,7 @@ public class CaptureService : IHostedService
     public const int streamFps = 30;
 
     private Process? _process;
+    private CameraConfig config;
     private CancellationTokenSource? _cts;
     private Task? _captureTask;
 
@@ -22,6 +23,11 @@ public class CaptureService : IHostedService
 
     public Mat debugOverlayFrame = new Mat(new Size(width, height), MatType.CV_8UC4, new Scalar(0, 0, 0, 0));
     public object debugOverlayLock = new();
+
+    public CaptureService(Config config)
+    {
+        this.config = config.Camera;
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -35,6 +41,8 @@ public class CaptureService : IHostedService
         int frameSize = width * height * 3;
 
         ProcessStartInfo psi;
+        string flipFilter = config.Flip ? "-vf hflip " : "";
+
         if (OperatingSystem.IsWindows())
         {
             psi = new ProcessStartInfo
@@ -42,7 +50,7 @@ public class CaptureService : IHostedService
                 FileName = "ffmpeg",
                 Arguments =
                     $"-f dshow -vcodec mjpeg -video_size {width}x{height} -framerate {fps} -i video=\"Brio 100\" " +
-                    $"-pix_fmt bgr24 -f rawvideo -an -sn -",
+                    $"-pix_fmt bgr24 {flipFilter}-f rawvideo -an -sn -",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -55,7 +63,7 @@ public class CaptureService : IHostedService
             {
                 FileName = "ffmpeg",
                 Arguments = $"-f v4l2 -vcodec mjpeg -video_size {width}x{height} -framerate {fps} -i /dev/video0 " +
-                            $"-pix_fmt bgr24 -f rawvideo -an -sn -",
+                            $"-pix_fmt bgr24 {flipFilter}-f rawvideo -an -sn -",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

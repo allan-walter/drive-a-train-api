@@ -9,6 +9,7 @@ using DriveATrain;
 using DriveATrain.Audio;
 using DriveATrain.Services;
 using NAudio.Wave;
+using NLayer.NAudioSupport;
 
 public class BroadcastService : IHostedService, IDisposable
 {
@@ -33,11 +34,15 @@ public class BroadcastService : IHostedService, IDisposable
                 Arguments =
                     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
                     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
-                    $"-f s16le -ar 44100 -ac 1 -i \\\\.\\pipe\\engine_audio " +
-                    $"-map 0:v -map 1:a " +
-                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 " +
-                    $"-c:a mp2 -b:a 128k -ar 44100 -ac 1 " +
-                    $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+                // Arguments =
+                //     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
+                //     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
+                //     $"-f s16le -ar 44100 -ac 1 -i \\\\.\\pipe\\engine_audio " +
+                //     $"-map 0:v -map 1:a " +
+                //     $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 " +
+                //     $"-c:a mp2 -b:a 128k -ar 44100 -ac 1 " +
+                //     $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
@@ -50,7 +55,7 @@ public class BroadcastService : IHostedService, IDisposable
 
     private EngineAudioSource LoadEngineSound(string path)
     {
-        using var reader = new AudioFileReader(path); // handles WAV/MP3, gives float samples
+        var reader = new Mp3FileReaderBase(path, wf => new Mp3FrameDecompressor(wf)).ToSampleProvider();
 
         // Force to mono if the file is stereo — average channels
         int channels = reader.WaveFormat.Channels;

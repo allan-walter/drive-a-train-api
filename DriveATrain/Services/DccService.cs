@@ -20,7 +20,7 @@ public class DccService : IHostedService
     public SpeedLimit ReverseLimit { get; set; } = SpeedLimit.NORMAL;
     public Throttle Throttle { get; set; } = new Throttle(0, false, false);
 
-    public SerialPort Port { get; private set; }
+    public SerialPort Port;
 
     private DccConfig config;
     IHostApplicationLifetime _lifetime;
@@ -31,6 +31,9 @@ public class DccService : IHostedService
         this.config = config.Dcc;
         _lifetime = lifetime;
         _broadcastService = broadcastService;
+
+
+        Port = new SerialPort(config.Dcc.Port, 115200); // change this
     }
 
     public void SetLimits(SpeedLimit forwardSpeed, SpeedLimit backwardSpeed)
@@ -44,21 +47,18 @@ public class DccService : IHostedService
         _ = SetThrottleAsync();
     }
 
-    private void Connect()
+    private async Task Connect()
     {
         // reset signal
         connectionReady = new TaskCompletionSource<bool>();
 
-        Port = new SerialPort(config.Port, 115200); // change this
 
         try
         {
             Port.Open();
 
             // Wait for connect
-            System.Threading.Tasks.Task.Delay(2000);
-
-            PowerOn();
+            await Task.Delay(2000);
         }
         catch (Exception e)
         {
@@ -66,10 +66,10 @@ public class DccService : IHostedService
         }
     }
 
-    private void SendCommand(string command)
+    private async Task SendCommand(string command)
     {
         if (!Port.IsOpen)
-            Connect();
+            await Connect();
 
         if (!Port.IsOpen)
             return;
@@ -95,11 +95,6 @@ public class DccService : IHostedService
     // Run the function for a short time then turn off automatically. Used for couplers
     public void RunCoupleFunction(Hubs.Uncouple uncouple)
     {
-        if (!Port.IsOpen)
-        {
-            Connect();
-        }
-
         // Function mode, address 3, function 0, 1 = on
         SendCommand($"<F {uncouple.Address} {uncouple.Function} 1>");
 
@@ -165,7 +160,8 @@ public class DccService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        Connect();
+        PowerOn();
+
         _lifetime.ApplicationStopping.Register(OnStopping);
         return Task.CompletedTask;
     }
