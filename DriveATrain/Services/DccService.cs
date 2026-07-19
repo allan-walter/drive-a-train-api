@@ -18,17 +18,19 @@ public class DccService : IHostedService
 
     public SpeedLimit ForwardLimit { get; set; } = SpeedLimit.NORMAL;
     public SpeedLimit ReverseLimit { get; set; } = SpeedLimit.NORMAL;
-    public Throttle Throttle { get; set; } = new Throttle(0, 0, false);
+    public Throttle Throttle { get; set; } = new Throttle(0, false, false);
 
     public SerialPort Port { get; private set; }
 
     private DccConfig config;
     IHostApplicationLifetime _lifetime;
+    private BroadcastService _broadcastService;
 
-    public DccService(Config config, IHostApplicationLifetime lifetime)
+    public DccService(Config config, IHostApplicationLifetime lifetime, BroadcastService broadcastService)
     {
         this.config = config.Dcc;
         _lifetime = lifetime;
+        _broadcastService = broadcastService;
     }
 
     public void SetLimits(SpeedLimit forwardSpeed, SpeedLimit backwardSpeed)
@@ -42,7 +44,7 @@ public class DccService : IHostedService
         _ = SetThrottleAsync();
     }
 
-    public void Connect()
+    private void Connect()
     {
         // reset signal
         connectionReady = new TaskCompletionSource<bool>();
@@ -60,30 +62,34 @@ public class DccService : IHostedService
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            // Console.WriteLine(e);
         }
+    }
+
+    private void SendCommand(string command)
+    {
+        if (!Port.IsOpen)
+            Connect();
+
+        if (!Port.IsOpen)
+            return;
+
+        if (!command.EndsWith("\n"))
+            command += "\n";
+
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(command);
+        Port.Write(bytes, 0, bytes.Length);
     }
 
     public void PowerOn()
     {
-        if (!Port.IsOpen)
-        {
-            Connect();
-        }
-
-        var bytes = System.Text.Encoding.UTF8.GetBytes("<1>\n"); // track power ON
-        Port.Write(bytes, 0, bytes.Length);
+        SendCommand("<1>"); // track power ON
     }
 
     public void PowerOff()
     {
-        if (!Port.IsOpen)
-        {
-            Connect();
-        }
-
-        var bytes = System.Text.Encoding.UTF8.GetBytes("<0>\n");
-        Port.Write(bytes, 0, bytes.Length);
+        SendCommand("<0>");
     }
 
     // Run the function for a short time then turn off automatically. Used for couplers
@@ -95,44 +101,47 @@ public class DccService : IHostedService
         }
 
         // Function mode, address 3, function 0, 1 = on
-        var onBytes = System.Text.Encoding.UTF8.GetBytes($"<F {uncouple.Address} {uncouple.Function} 1>\n");
-        Port.Write(onBytes, 0, onBytes.Length);
+        SendCommand($"<F {uncouple.Address} {uncouple.Function} 1>");
 
         _ = Task.Run(async () =>
         {
-            // Wait for user to drive away
+            // Wait for user to drive away (hopefully)
             await Task.Delay(TimeSpan.FromMilliseconds(2000));
-            var offBytes = System.Text.Encoding.UTF8.GetBytes($"<F {uncouple.Address} {uncouple.Function} 0>\n");
-            Port.Write(offBytes, 0, offBytes.Length);
+
+            SendCommand($"<F {uncouple.Address} {uncouple.Function} 0>");
         });
     }
 
-    public LimitValues GetThrottleLimits()
+    public LimitValues GetThrottleLimits(bool @override)
     {
-        var res = new LimitValues();
+        var res = new LimitValues(config);
 
-        if (ForwardLimit == SpeedLimit.SLOW)
-            res.Forward = config.SlowThrottleValue;
-        else if (ForwardLimit == SpeedLimit.STOP)
-            res.Forward = 0.0;
+        // Dev override. Default max speed still applies
+        if (!@override)
+        {
+            if (ForwardLimit == SpeedLimit.SLOW)
+                res.Forward = config.SlowThrottleValue;
+            else if (ForwardLimit == SpeedLimit.STOP)
+                res.Forward = 0.0;
 
-        if (ReverseLimit == SpeedLimit.SLOW)
-            res.Reverse = config.SlowThrottleValue;
-        else if (ReverseLimit == SpeedLimit.STOP)
-            res.Reverse = 0.0;
+            if (ReverseLimit == SpeedLimit.SLOW)
+                res.Reverse = config.SlowThrottleValue;
+            else if (ReverseLimit == SpeedLimit.STOP)
+                res.Reverse = 0.0;
+        }
 
         return res;
     }
 
     // Set a new throttle and check limits, or use null to just recheck limits
-    public async Task SetThrottleAsync(Throttle throttle = null)
+    public async Task SetThrottleAsync(Throttle? throttle = null)
     {
         if (throttle != null)
             Throttle = throttle;
 
         double throttleValue = Throttle.Value;
         bool reverse = Throttle.Reverse;
-        var limits = GetThrottleLimits();
+        var limits = GetThrottleLimits(Throttle.Override);
 
         if (!reverse)
         {
@@ -145,18 +154,11 @@ public class DccService : IHostedService
 
         throttleValue = Math.Min(throttleValue, config.MaxSpeed);
 
-        if (!Port.IsOpen)
-        {
-            Connect();
-        }
+        Debug.WriteLine($"Throttle: {throttleValue}, Reverse: {reverse}");
 
-        // For dev
-        if (throttle != null && throttle.OverrideValue > 0)
-            throttleValue = throttle.OverrideValue;
+        _broadcastService.engineAudio.SetSpeed(throttleValue);
 
-        var data = $"<t {config.LocoAddress} {(int)(throttleValue * 100)} {(reverse ? 0 : 1)}>\n";
-        var bytes = System.Text.Encoding.UTF8.GetBytes(data); // loco 3, speed 50, forward
-        Port.Write(bytes, 0, bytes.Length);
+        SendCommand($"<t {config.LocoAddress} {(int)(throttleValue * 100)} {(reverse ? 0 : 1)}>");
 
         await Task.CompletedTask;
     }
@@ -174,7 +176,8 @@ public class DccService : IHostedService
         {
             // Turn track power OFF safely
             PowerOff();
-            System.Threading.Tasks.Task.Delay(CMD_TIME); // give it time to send
+            Task.Delay(CMD_TIME); // give it time to send
+
             Port.Close();
         }
         catch (Exception e)
@@ -205,19 +208,25 @@ public class SpeedResult
 public class Throttle
 {
     public double Value { get; set; }
-    public double OverrideValue { get; set; }
+    public bool Override { get; set; }
     public bool Reverse { get; set; }
 
-    public Throttle(double value, double overrideValue, bool reverse)
+    public Throttle(double value, bool @override, bool reverse)
     {
         Value = value;
-        OverrideValue = overrideValue;
+        Override = @override;
         Reverse = reverse;
     }
 }
 
 public class LimitValues
 {
-    public double Forward { get; set; } = double.MaxValue;
-    public double Reverse { get; set; } = double.MaxValue;
+    public double Forward { get; set; }
+    public double Reverse { get; set; }
+
+    public LimitValues(DccConfig config)
+    {
+        Forward = config.MaxSpeed;
+        Reverse = config.MaxSpeed;
+    }
 }

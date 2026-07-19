@@ -18,7 +18,7 @@ public class BroadcastService : IHostedService, IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _pumpTask; // capture -> ffmpeg -> broadcast, all in one loop
     private NamedPipeServerStream audioPipe;
-    private EngineAudioSource engineAudio;
+    public EngineAudioSource engineAudio;
 
     public BroadcastService(CaptureService captureService)
     {
@@ -85,7 +85,6 @@ public class BroadcastService : IHostedService, IDisposable
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
         _ffmpeg.Start();
-        audioPipe.WaitForConnectionAsync();
         // One background task drives both the capture->stdin write and stdout->clients broadcast,
         // via two inner loops on the same Task so a single Stop/Dispose path covers everything.
         _pumpTask = Task.Run(() => RunPump(_cts.Token));
@@ -149,6 +148,7 @@ public class BroadcastService : IHostedService, IDisposable
 
     void AudioLoop(CancellationToken token)
     {
+        audioPipe.WaitForConnection();
         const int outputRate = 44100;
         const int chunkSamples = 882; // 20ms
         var outBuffer = new short[chunkSamples];

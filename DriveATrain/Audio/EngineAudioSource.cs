@@ -13,6 +13,12 @@ public class EngineAudioSource
         _sourceRate = sourceRate;
     }
 
+    public void SetSpeed(double speed)
+    {
+        var maxRpm = 1d;
+        Pitch = 0.8 + (speed / maxRpm) * 1.4; // tune these two constants by ear 
+    }
+
     public void Render(short[] outBuffer, int count, int outputRate)
     {
         double step = (double)_sourceRate / outputRate * Pitch;

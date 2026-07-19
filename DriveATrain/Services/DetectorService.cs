@@ -68,11 +68,10 @@ public class DetectorService(
             }
             else
             {
-                // _dccService.SetLimits(SpeedLimit.Stop, SpeedLimit.Stop);
                 dccService.SetLimits(SpeedLimit.NORMAL, SpeedLimit.NORMAL);
             }
 
-            var throttleLimits = dccService.GetThrottleLimits();
+            // var throttleLimits = dccService.GetThrottleLimits(config.Dcc);
             var railUnits = units.Select(u => new RailUnitGet(u)).ToList();
 
             // var railUnits = new List<RailUnitGet>();
@@ -84,9 +83,9 @@ public class DetectorService(
                 {
                     Units = railUnits,
                     Forward = dccService.ForwardLimit,
-                    ForwardValue = throttleLimits.Forward,
+                    // ForwardValue = throttleLimits.Forward,
                     Reverse = dccService.ReverseLimit,
-                    ReverseValue = throttleLimits.Reverse,
+                    // ReverseValue = throttleLimits.Reverse,
                 },
                 GetConnections(railUnits));
 
