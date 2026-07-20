@@ -12,7 +12,8 @@ public class InfoHub(Config config) : Hub
         {
             width = DetectorService.CAMERA_WIDTH,
             height = DetectorService.CAMERA_HEIGHT,
-            maxThrottle = config.Dcc.MaxSpeed
+            maxThrottle = config.Dcc.MaxSpeed,
+            throttleStep = config.Dcc.ThrottleStep,
         };
 
         Clients.All.SendAsync("info", data);

@@ -10,6 +10,16 @@ public class UnitHub(DccService dccService) : Hub
         return base.OnConnectedAsync();
     }
 
+    public async Task PowerOn()
+    {
+        await dccService.PowerOn();
+    }
+
+    public async Task PowerOff()
+    {
+        await dccService.PowerOff();
+    }
+
     public void Uncouple(Uncouple uncouple)
     {
         dccService.RunCoupleFunction(uncouple);

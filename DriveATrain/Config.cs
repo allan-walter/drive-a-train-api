@@ -15,6 +15,7 @@ public class DccConfig
     public double MaxSpeed { get; set; }
     public int LocoAddress { get; set; }
     public double SlowThrottleValue { get; set; }
+    public double ThrottleStep { get; set; }
 }
 
 public class TurnoutConfig

@@ -11,6 +11,7 @@ public class DetectorService(
     LimiterService limiterService,
     CaptureService captureService,
     DccService dccService,
+    UnitService unitService,
     IHubContext<UnitHub> unitHub,
     Config config) : IHostedService, IDisposable
 {
@@ -78,16 +79,17 @@ public class DetectorService(
             // railUnits = RailUnitMocks.GetMocks(config.Units.First(u => u.Type == UnitType.Locomotive),
             //     config.Units.First(u => u.Type == UnitType.Wagon));
 
-            SchedulePublish(
+            unitService.SetLiveData(
                 new LiveData
                 {
                     Units = railUnits,
                     Forward = dccService.ForwardLimit,
                     // ForwardValue = throttleLimits.Forward,
                     Reverse = dccService.ReverseLimit,
+                    PowerOn = dccService.PowerIsOn
                     // ReverseValue = throttleLimits.Reverse,
-                },
-                GetConnections(railUnits));
+                });
+            // GetConnections(railUnits));
 
             lock (captureService.debugOverlayLock)
             {
@@ -99,45 +101,6 @@ public class DetectorService(
         {
             foreach (var marker in markers)
                 marker.Mask.Dispose();
-        }
-    }
-
-    private void SchedulePublish(LiveData liveData, List<Uncouple> connections)
-    {
-        _pendingLiveData = liveData;
-        _pendingConnections = connections;
-        if (Interlocked.CompareExchange(ref _publishScheduled, 1, 0) != 0)
-            return;
-
-        _ = PublishLoopAsync();
-    }
-
-    private async Task PublishLoopAsync()
-    {
-        try
-        {
-            while (true)
-            {
-                var liveData = _pendingLiveData;
-                var connections = _pendingConnections;
-                if (liveData == null || connections == null)
-                    break;
-
-                _pendingLiveData = null;
-                _pendingConnections = null;
-
-                await unitHub.Clients.All.SendAsync("units", liveData);
-                await unitHub.Clients.All.SendAsync("connections", connections);
-
-                if (_pendingLiveData == null)
-                    break;
-            }
-        }
-        finally
-        {
-            Interlocked.Exchange(ref _publishScheduled, 0);
-            if (_pendingLiveData != null)
-                SchedulePublish(_pendingLiveData, _pendingConnections!);
         }
     }
 

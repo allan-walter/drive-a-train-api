@@ -16,6 +16,7 @@ public class DccService : IHostedService
 
     private TaskCompletionSource<bool> connectionReady = new TaskCompletionSource<bool>();
 
+    public bool PowerIsOn { get; set; }
     public SpeedLimit ForwardLimit { get; set; } = SpeedLimit.NORMAL;
     public SpeedLimit ReverseLimit { get; set; } = SpeedLimit.NORMAL;
     public Throttle Throttle { get; set; } = new Throttle(0, false, false);
@@ -66,13 +67,13 @@ public class DccService : IHostedService
         }
     }
 
-    private async Task SendCommand(string command)
+    private async Task<bool> SendCommand(string command)
     {
         if (!Port.IsOpen)
             await Connect();
 
         if (!Port.IsOpen)
-            return;
+            return false;
 
         if (!command.EndsWith("\n"))
             command += "\n";
@@ -80,16 +81,20 @@ public class DccService : IHostedService
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(command);
         Port.Write(bytes, 0, bytes.Length);
+
+        return true;
     }
 
-    public void PowerOn()
+    public async Task PowerOn()
     {
-        SendCommand("<1>"); // track power ON
+        if (await SendCommand("<1>"))
+            PowerIsOn = true;
     }
 
-    public void PowerOff()
+    public async Task PowerOff()
     {
-        SendCommand("<0>");
+        if (await SendCommand("<0>"))
+            PowerIsOn = false;
     }
 
     // Run the function for a short time then turn off automatically. Used for couplers

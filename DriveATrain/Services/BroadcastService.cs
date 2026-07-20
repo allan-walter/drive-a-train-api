@@ -149,6 +149,7 @@ public class BroadcastService : IHostedService, IDisposable
         var audioTask = Task.Run(() => AudioLoop(token), token);
         var broadcastTask = BroadcastLoop(token);
         await Task.WhenAll(captureTask, broadcastTask, audioTask);
+        // await Task.WhenAll(captureTask, broadcastTask);
     }
 
     void AudioLoop(CancellationToken token)

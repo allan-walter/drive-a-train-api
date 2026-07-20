@@ -27,6 +27,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<DccService>());
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DetectorService>());
 builder.Services.AddSingleton<LimiterService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<UnitService>());
+builder.Services.AddSingleton<UnitService>();
 builder.Services.AddSingleton<CaptureService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CaptureService>());
 builder.Services.AddSingleton<BroadcastService>();

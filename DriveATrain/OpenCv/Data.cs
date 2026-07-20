@@ -113,6 +113,8 @@ public class LiveData
     public double ForwardValue { get; set; }
     public SpeedLimit Reverse { get; set; }
     public double ReverseValue { get; set; }
+    
+    public bool PowerOn { get; set; }
 }
 
 // What is returned to the frontend about the detected units
