@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace DriveATrain.Hubs;
 
-public class UnitHub(DccService dccService) : Hub
+public class UnitHub(DccService dccService, TurnoutService turnoutService) : Hub
 {
     public override Task OnConnectedAsync()
     {
@@ -24,6 +24,17 @@ public class UnitHub(DccService dccService) : Hub
     {
         dccService.RunCoupleFunction(uncouple);
     }
+
+    public async Task DebugTurnout(DebugTurnout debugTurnout)
+    {
+        await turnoutService.Debug(debugTurnout);
+    }
+}
+
+public class DebugTurnout
+{
+    public int Pin { get; set; }
+    public int Degree { get; set; }
 }
 
 public class Uncouple
