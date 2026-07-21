@@ -21,6 +21,16 @@ public class DccConfig
 public class TurnoutConfig
 {
     public string Port { get; set; }
+    public List<TurnoutLocation> Locations { get; set; }
+}
+
+public class TurnoutLocation
+{
+    public int Pin { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Rotation { get; set; }
+    public bool Reverse { get; set; }
 }
 
 public class CameraConfig
