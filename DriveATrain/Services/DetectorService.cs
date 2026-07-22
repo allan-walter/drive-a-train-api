@@ -39,32 +39,37 @@ public class DetectorService(
     private LiveData? _pendingLiveData;
     private List<Uncouple>? _pendingConnections;
     private int _publishScheduled;
+    private readonly DetectionTimingWindow _detectionTiming = new();
 
     public void Process(Mat frame)
     {
+        var processStopwatch = Stopwatch.StartNew();
         // DebugWindow.Show("test frame", frame.Clone());
         using var processingFrame = frame.Clone();
         // Transparent with debug info on top. This is overlayed over the actual frame at the end
         using var debugFrame = new Mat(new Size(CaptureService.width, CaptureService.height), MatType.CV_8UC4,
             new Scalar(0, 0, 0, 0));
-        var markers = GetMarkerSeeds(processingFrame, debugFrame);
+        List<MarkerDef>? markers = null;
 
         try
         {
+            markers = MeasureStage("marker-seeds", () => GetMarkerSeeds(processingFrame, debugFrame));
             using var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
             using var combinedOverlay = Helpers.MaskToTransparentOverlay(combinedMask);
 
             Cv2.Circle(debugFrame, new Point(200, 200), 20, new Scalar(0, 200, 0, 255), -1);
             // Blend.BlendOverlay(combinedOverlay, debugFrame);
 
-            var dirMarkers = IdentifyDirectionMarkers(frame, debugFrame, combinedMask);
-            var units = GetRects(frame, debugFrame, markers, dirMarkers);
+            var dirMarkers = MeasureStage("direction-markers",
+                () => IdentifyDirectionMarkers(frame, debugFrame, combinedMask));
+            var units = MeasureStage("unit-rects", () => GetRects(frame, debugFrame, markers, dirMarkers));
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
             if (train != null)
             {
-                var limits = limiterService.ProcessLimits(frame, train.Front, train.Back);
+                var limits = MeasureStage("speed-limits",
+                    () => limiterService.ProcessLimits(frame, train.Front, train.Back));
                 dccService.SetLimits(limits.Forward, limits.Reverse);
             }
             else
@@ -99,8 +104,13 @@ public class DetectorService(
         }
         finally
         {
-            foreach (var marker in markers)
-                marker.Mask.Dispose();
+            if (markers != null)
+            {
+                foreach (var marker in markers)
+                    marker.Mask.Dispose();
+            }
+
+            _detectionTiming.RecordFrame(processStopwatch.Elapsed);
         }
     }
 
@@ -149,94 +159,98 @@ public class DetectorService(
         // Cv2.CvtColor(goZone, goZoneColor, ColorConversionCodes.GRAY2BGRA);
         // Cv2.AddWeighted(goZoneColor, goZoneAlpha, debugFrame, 1 - goZoneAlpha, 1, debugFrame);
 
-        Cv2.GaussianBlur(frame, frame, Blur, 0);
+        MeasureStage("marker-seeds.blur", () => Cv2.GaussianBlur(frame, frame, Blur, 0));
 
-        using var res = GetDiffMask(frame);
+        using var res = MeasureStage("marker-seeds.diff-mask", () => GetDiffMask(frame));
 
 
-        Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
+        MeasureStage("marker-seeds.threshold", () => Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary));
 
         // Erosion then dilation, renmove noise
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(3, 3));
-        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
+        MeasureStage("marker-seeds.morph-open-small", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen));
 
         // Dilation then eriosion, fill gaps and join blobs
         using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
-        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
+        MeasureStage("marker-seeds.morph-close", () => Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose));
 
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
         using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
-        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2);
+        MeasureStage("marker-seeds.morph-open-large", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2));
 
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
         // A bit of blur so there is more of an average color to find
-        Cv2.GaussianBlur(frame, blurredFrame, new Size(21, 21), 0);
+        MeasureStage("marker-seeds.color-blur", () => Cv2.GaussianBlur(frame, blurredFrame, new Size(21, 21), 0));
         blurredFrame.CopyTo(cutout, res);
 
-        var colorMasks =
-            SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
+        var colorMasks = MeasureStage("marker-seeds.color-segmentation",
+            () => SplitMaskByNearestColorRegion(blurredFrame, res,
+                LookupColor.Colors.Select(c => c.SingleColor).ToList()));
 
         var markerDefs = new List<MarkerDef>();
         var keptMasks = new HashSet<Mat>();
 
         try
         {
-            for (int index = 0; index < colorMasks.Count; index++)
+            MeasureStage("marker-seeds.contour-filtering", () =>
             {
-                var mask = colorMasks[index];
-
-                var center = GetCenterOfShape(mask);
-                var color = LookupColor.Colors[index];
-
-                // No shape for this color this frame; skip before allocating filteredMask.
-                // The original colorMasks[index] is disposed in the finally block below.
-                if (center == null)
-                    continue;
-
-                Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
-                    RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-
-// Start with a blank mask, same size/type as original
-                Mat filteredMask = Mat.Zeros(mask.Size(), mask.Type());
-                Point[] contourMatch = [];
-
-                foreach (var contour in contours)
+                for (int index = 0; index < colorMasks.Count; index++)
                 {
-                    // TODO gross but works for now to filter out extra detected stuff. In future when background is not yellow should be easier to only detect one color
-                    double area = Cv2.ContourArea(contour);
-                    if (area <= 3000)
+                    var mask = colorMasks[index];
+
+                    var center = GetCenterOfShape(mask);
+                    var color = LookupColor.Colors[index];
+
+                    // No shape for this color this frame; skip before allocating filteredMask.
+                    // The original colorMasks[index] is disposed in the finally block below.
+                    if (center == null)
                         continue;
 
-                    contourMatch = contour;
+                    Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
+                        RetrievalModes.External, ContourApproximationModes.ApproxSimple);
 
-                    // Draw this contour onto the filtered mask (filled white)
-                    Cv2.FillPoly(filteredMask, new[] { contour }, Scalar.All(255));
+                    // Start with a blank mask, same size/type as original
+                    Mat filteredMask = Mat.Zeros(mask.Size(), mask.Type());
+                    Point[] contourMatch = [];
 
-                    // // Overlay drawing (unchanged from before)
-                    // contourOverlay.SetTo(Scalar.All(0));
-                    // Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
-                    // double alpha = 0.5;
-                    // Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
+                    foreach (var contour in contours)
+                    {
+                        // TODO gross but works for now to filter out extra detected stuff. In future when background is not yellow should be easier to only detect one color
+                        double area = Cv2.ContourArea(contour);
+                        if (area <= 3000)
+                            continue;
+
+                        contourMatch = contour;
+
+                        // Draw this contour onto the filtered mask (filled white)
+                        Cv2.FillPoly(filteredMask, new[] { contour }, Scalar.All(255));
+
+                        // // Overlay drawing (unchanged from before)
+                        // contourOverlay.SetTo(Scalar.All(0));
+                        // Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
+                        // double alpha = 0.5;
+                        // Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
+                    }
+
+                    // Replace the original mask with the filtered one
+                    mask = filteredMask;
+
+                    // DebugWindow.Show("mask " + index, mask);
+
+                    keptMasks.Add(mask);
+                    markerDefs.Add(new MarkerDef(
+                        -1,
+                        color,
+                        index == 0
+                            ? config.Units.ElementAtOrDefault(0)
+                            : config.Units.ElementAtOrDefault(1),
+                        center.Value.ToPoint(),
+                        mask,
+                        contourMatch
+                    ));
                 }
-
-// Replace the original mask with the filtered one
-                mask = filteredMask;
-
-                // DebugWindow.Show("mask " + index, mask);
-
-                keptMasks.Add(mask);
-                markerDefs.Add(new MarkerDef(
-                    -1,
-                    color,
-                    index == 0
-                        ? config.Units.ElementAtOrDefault(0)
-                        : config.Units.ElementAtOrDefault(1),
-                    center.Value.ToPoint(),
-                    mask,
-                    contourMatch
-                ));
-            }
+            });
         }
         finally
         {
@@ -266,39 +280,45 @@ public class DetectorService(
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, Mat mask)
     {
         using var hsv = new Mat();
-        Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
+        MeasureStage("direction-markers.hsv", () => Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV));
 
         using var debug = new Mat();
-        Cv2.InRange(hsv, new Scalar(0, 0, 120), new Scalar(180, 35, 255), debug);
+        MeasureStage("direction-markers.threshold",
+            () => Cv2.InRange(hsv, new Scalar(0, 0, 120), new Scalar(180, 35, 255), debug));
 
         using var cutout = new Mat();
         debug.CopyTo(cutout, mask);
 
-        Cv2.FindContours(cutout, out Point[][] contours, out HierarchyIndex[] hierarchy,
-            RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+        Point[][] contours = [];
+        HierarchyIndex[] hierarchy = [];
+        MeasureStage("direction-markers.contours", () => Cv2.FindContours(cutout, out contours, out hierarchy,
+            RetrievalModes.External, ContourApproximationModes.ApproxSimple));
 
         var markers = new List<Point>();
 
-        foreach (var contour in contours)
+        MeasureStage("direction-markers.rects", () =>
         {
-            var area = Cv2.ContourArea(contour);
-            // Cv2.DrawContours(debugFrame, new[] { contour }, -1, Scalar.Orange, -1);
-
-            var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
-            var rect = Cv2.MinAreaRect(contour2f);
-            var center = rect.Center;
-
-            if (area > 13 && area < 30)
+            foreach (var contour in contours)
             {
-                // Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Green, -1);
-            }
-            else
-            {
-                // Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Red, -1);
-            }
+                var area = Cv2.ContourArea(contour);
+                // Cv2.DrawContours(debugFrame, new[] { contour }, -1, Scalar.Orange, -1);
 
-            // Cv2.PutText(debugFrame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 1, Scalar.Orange, 2);
-        }
+                var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
+                var rect = Cv2.MinAreaRect(contour2f);
+                var center = rect.Center;
+
+                if (area > 13 && area < 30)
+                {
+                    // Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Green, -1);
+                }
+                else
+                {
+                    // Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Red, -1);
+                }
+
+                // Cv2.PutText(debugFrame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 1, Scalar.Orange, 2);
+            }
+        });
 
 
         return markers;
@@ -377,64 +397,73 @@ public class DetectorService(
         var distMaps = new Mat[n];
 
         // Step 1: per-color range masks, restricted to the original mask
-        for (int i = 0; i < n; i++)
+        MeasureStage("marker-seeds.color-segmentation.range-masks", () =>
         {
-            var color = targetColors[i];
-            var lower = new Scalar(
-                Math.Max(0, color.Val0 - tolerance),
-                Math.Max(0, color.Val1 - tolerance),
-                Math.Max(0, color.Val2 - tolerance));
-            var upper = new Scalar(
-                Math.Min(255, color.Val0 + tolerance),
-                Math.Min(255, color.Val1 + tolerance),
-                Math.Min(255, color.Val2 + tolerance));
+            for (int i = 0; i < n; i++)
+            {
+                var color = targetColors[i];
+                var lower = new Scalar(
+                    Math.Max(0, color.Val0 - tolerance),
+                    Math.Max(0, color.Val1 - tolerance),
+                    Math.Max(0, color.Val2 - tolerance));
+                var upper = new Scalar(
+                    Math.Min(255, color.Val0 + tolerance),
+                    Math.Min(255, color.Val1 + tolerance),
+                    Math.Min(255, color.Val2 + tolerance));
 
-            using var rangeMask = new Mat();
-            Cv2.InRange(frame, lower, upper, rangeMask);
+                using var rangeMask = new Mat();
+                Cv2.InRange(frame, lower, upper, rangeMask);
 
-            colorMasks[i] = new Mat();
-            Cv2.BitwiseAnd(rangeMask, mask, colorMasks[i]);
-        }
+                colorMasks[i] = new Mat();
+                Cv2.BitwiseAnd(rangeMask, mask, colorMasks[i]);
+            }
+        });
 
         // Step 2: distance transform per color
-        for (int i = 0; i < n; i++)
+        MeasureStage("marker-seeds.color-segmentation.distance-transform", () =>
         {
-            using var inv = new Mat();
-            Cv2.BitwiseNot(colorMasks[i], inv);
+            for (int i = 0; i < n; i++)
+            {
+                using var inv = new Mat();
+                Cv2.BitwiseNot(colorMasks[i], inv);
 
-            distMaps[i] = new Mat();
-            Cv2.DistanceTransform(inv, distMaps[i], DistanceTypes.L2, DistanceTransformMasks.Mask5);
-        }
+                distMaps[i] = new Mat();
+                Cv2.DistanceTransform(inv, distMaps[i], DistanceTypes.L2, DistanceTransformMasks.Mask5);
+            }
+        });
 
         // Step 3: assign every pixel in the original mask to its nearest color region
         var results = Enumerable.Range(0, n)
             .Select(_ => Mat.Zeros(mask.Size(), MatType.CV_8UC1).ToMat())
             .ToList();
 
-        int rows = mask.Rows;
-        for (int y = 0; y < rows; y++)
+        MeasureStage("marker-seeds.color-segmentation.pixel-assignment", () =>
         {
-            int cols = mask.Cols;
-            for (int x = 0; x < cols; x++)
+            int rows = mask.Rows;
+            for (int y = 0; y < rows; y++)
             {
-                if (mask.At<byte>(y, x) == 0) continue;
-
-                int bestIndex = -1;
-                float bestDist = float.MaxValue;
-                for (int i = 0; i < n; i++)
+                int cols = mask.Cols;
+                for (int x = 0; x < cols; x++)
                 {
-                    float d = distMaps[i].At<float>(y, x);
-                    if (d < bestDist)
-                    {
-                        bestDist = d;
-                        bestIndex = i;
-                    }
-                }
+                    if (mask.At<byte>(y, x) == 0) continue;
 
-                if (bestIndex >= 0)
-                    results[bestIndex].Set(y, x, (byte)255);
+                    int bestIndex = -1;
+                    float bestDist = float.MaxValue;
+                    for (int i = 0; i < n; i++)
+                    {
+                        float d = distMaps[i].At<float>(y, x);
+                        if (d < bestDist)
+                        {
+                            bestDist = d;
+                            bestIndex = i;
+                        }
+                    }
+
+                    if (bestIndex >= 0)
+                        results[bestIndex].Set(y, x, (byte)255);
+                }
             }
-        }
+        });
 
         foreach (var cm in colorMasks)
             cm?.Dispose();
@@ -536,7 +565,6 @@ public class DetectorService(
             {
                 if (captureService.TryGetLatestFrame(frame))
                 {
-                    // This just processes at whatever  speed it can manage. TODO get fps im interested
                     Process(frame);
                 }
             }
@@ -559,6 +587,181 @@ public class DetectorService(
     {
         token.Dispose();
         _mog2.Dispose();
+    }
+
+    private T MeasureStage<T>(string stageName, Func<T> action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            _detectionTiming.RecordStage(stageName, stopwatch.Elapsed);
+        }
+    }
+
+    private void MeasureStage(string stageName, Action action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            action();
+        }
+        finally
+        {
+            _detectionTiming.RecordStage(stageName, stopwatch.Elapsed);
+        }
+    }
+
+    private sealed class DetectionTimingWindow
+    {
+        private static readonly TimeSpan LogInterval = TimeSpan.FromSeconds(1);
+
+        private readonly object _sync = new();
+        private readonly Stopwatch _windowStopwatch = Stopwatch.StartNew();
+        private readonly Dictionary<string, StageTiming> _stages = new();
+        private readonly List<string> _stageOrder = [];
+        private int _frameCount;
+        private TimeSpan _frameElapsed = TimeSpan.Zero;
+
+        public void RecordStage(string stageName, TimeSpan elapsed)
+        {
+            lock (_sync)
+            {
+                if (!_stages.TryGetValue(stageName, out var stage))
+                {
+                    stage = new StageTiming();
+                    _stages[stageName] = stage;
+                    _stageOrder.Add(stageName);
+                }
+
+                stage.CallCount++;
+                stage.TotalElapsed += elapsed;
+            }
+        }
+
+        public void RecordFrame(TimeSpan elapsed)
+        {
+            string? message = null;
+
+            lock (_sync)
+            {
+                _frameCount++;
+                _frameElapsed += elapsed;
+
+                if (_windowStopwatch.Elapsed < LogInterval || _frameCount == 0)
+                    return;
+
+                double processedFps = _frameCount / _windowStopwatch.Elapsed.TotalSeconds;
+                double averageFrameMs = _frameElapsed.TotalMilliseconds / _frameCount;
+                var stageSummary = BuildStageSummary();
+
+                message = $"[detect] total: {processedFps:F2} fps ({averageFrameMs:F2} ms/frame)";
+                if (stageSummary.Count > 0)
+                    message += Environment.NewLine + string.Join(Environment.NewLine, stageSummary);
+
+                _frameCount = 0;
+                _frameElapsed = TimeSpan.Zero;
+                _windowStopwatch.Restart();
+
+                foreach (var stage in _stages.Values)
+                    stage.Reset();
+            }
+
+            Debug.WriteLine(message);
+            Console.WriteLine(message);
+        }
+
+        private List<string> BuildStageSummary()
+        {
+            var lines = new List<string>();
+
+            foreach (var stageName in _stageOrder.Where(IsRootStage))
+                AppendStageGroup(lines, stageName);
+
+            return lines;
+        }
+
+        private void AppendStageGroup(List<string> lines, string stageName)
+        {
+            if (!_stages.TryGetValue(stageName, out var stage) || stage.CallCount == 0)
+                return;
+
+            lines.Add(FormatStageHeader(GetDisplayName(stageName), stage));
+
+            var childLeaves = new List<string>();
+
+            foreach (var childName in GetDirectChildren(stageName))
+            {
+                if (!_stages.TryGetValue(childName, out var childStage) || childStage.CallCount == 0)
+                    continue;
+
+                var grandChildren = GetDirectChildren(childName)
+                    .Where(grandChildName => _stages.TryGetValue(grandChildName, out var grandChildStage) &&
+                                             grandChildStage.CallCount > 0)
+                    .ToList();
+
+                if (grandChildren.Count == 0)
+                {
+                    childLeaves.Add(FormatInlineStage(GetDisplayName(childName), childStage));
+                    continue;
+                }
+
+                var grandChildSummary = string.Join(" | ", grandChildren.Select(grandChildName =>
+                    FormatInlineStage(GetDisplayName(grandChildName), _stages[grandChildName])));
+                lines.Add($"    {FormatInlineStage(GetDisplayName(childName), childStage)} -> {grandChildSummary}");
+            }
+
+            if (childLeaves.Count > 0)
+                lines.Add($"    {string.Join(" | ", childLeaves)}");
+        }
+
+        private IEnumerable<string> GetDirectChildren(string parentStageName) =>
+            _stageOrder.Where(stageName => GetParentStageName(stageName) == parentStageName);
+
+        private static bool IsRootStage(string stageName) => !stageName.Contains('.');
+
+        private static string? GetParentStageName(string stageName)
+        {
+            int splitIndex = stageName.LastIndexOf('.');
+            return splitIndex >= 0 ? stageName[..splitIndex] : null;
+        }
+
+        private static string GetDisplayName(string stageName)
+        {
+            int splitIndex = stageName.LastIndexOf('.');
+            return splitIndex >= 0 ? stageName[(splitIndex + 1)..] : stageName;
+        }
+
+        private static string FormatStageHeader(string displayName, StageTiming stage)
+        {
+            double averageMs = stage.TotalElapsed.TotalMilliseconds / stage.CallCount;
+            double fps = stage.TotalElapsed.TotalSeconds > 0
+                ? stage.CallCount / stage.TotalElapsed.TotalSeconds
+                : 0;
+
+            return $"  {displayName,-20} {averageMs,8:F2} ms avg  {fps,8:F2} fps";
+        }
+
+        private static string FormatInlineStage(string displayName, StageTiming stage)
+        {
+            double averageMs = stage.TotalElapsed.TotalMilliseconds / stage.CallCount;
+            return $"{displayName} {averageMs:F2} ms";
+        }
+
+        private sealed class StageTiming
+        {
+            public int CallCount { get; set; }
+            public TimeSpan TotalElapsed { get; set; }
+
+            public void Reset()
+            {
+                CallCount = 0;
+                TotalElapsed = TimeSpan.Zero;
+            }
+        }
     }
 }
 

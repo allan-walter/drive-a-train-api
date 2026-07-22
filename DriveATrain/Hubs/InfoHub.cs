@@ -14,6 +14,7 @@ public class InfoHub(Config config) : Hub
             height = DetectorService.CAMERA_HEIGHT,
             maxThrottle = config.Dcc.MaxSpeed,
             throttleStep = config.Dcc.ThrottleStep,
+            turnoutLocations = config.Turnout.Locations
         };
 
         Clients.All.SendAsync("info", data);

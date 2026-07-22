@@ -10,7 +10,7 @@ Servo servo;
 
 // Define your allowed pins and whether they are reversed
 ServoConfig servos[] = {
-  {12, 180, 149},   // pin 12, normal
+  {12, 65, 45},   // pin 12, normal
   // {5, true},    // pin 5, reversed
   // {6, false},   // pin 6, normal
 };

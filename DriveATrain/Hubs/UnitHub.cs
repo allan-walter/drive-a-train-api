@@ -25,6 +25,11 @@ public class UnitHub(DccService dccService, TurnoutService turnoutService) : Hub
         dccService.RunCoupleFunction(uncouple);
     }
 
+    public async Task Turnout(Turnout turnout)
+    {
+        await turnoutService.Run(turnout);
+    }
+
     public async Task DebugTurnout(DebugTurnout debugTurnout)
     {
         await turnoutService.Debug(debugTurnout);
@@ -35,6 +40,12 @@ public class DebugTurnout
 {
     public int Pin { get; set; }
     public int Degree { get; set; }
+}
+
+public class Turnout
+{
+    public int Pin { get; set; }
+    public bool State { get; set; }
 }
 
 public class Uncouple
