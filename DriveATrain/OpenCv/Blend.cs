@@ -29,6 +29,9 @@ public class Blend
         Mat[] srcChannels = Cv2.Split(source);
         try
         {
+            if (Cv2.CountNonZero(srcChannels[3]) == 0)
+                return;
+
             using Mat sourceBgr = new Mat();
             Cv2.Merge(new[] { srcChannels[0], srcChannels[1], srcChannels[2] }, sourceBgr);
 
@@ -38,7 +41,9 @@ public class Blend
             using Mat alpha3 = new Mat();
             Cv2.CvtColor(alphaF, alpha3, ColorConversionCodes.GRAY2BGR);
 
-            using Mat invAlpha3 = new Mat(alpha3.Size(), alpha3.Type(), Scalar.All(1.0)) - alpha3;
+            using Mat ones = new Mat(alpha3.Size(), alpha3.Type(), Scalar.All(1.0));
+            using Mat invAlpha3 = new Mat();
+            Cv2.Subtract(ones, alpha3, invAlpha3);
 
             // Clone (not alias) when 3-channel, so disposal doesn't touch target
             using Mat targetBgr = target.Channels() == 4
@@ -51,7 +56,14 @@ public class Blend
             using Mat dstF = new Mat();
             targetBgr.ConvertTo(dstF, MatType.CV_32FC3);
 
-            using Mat blended = srcF.Mul(alpha3) + dstF.Mul(invAlpha3);
+            using Mat srcWeighted = new Mat();
+            Cv2.Multiply(srcF, alpha3, srcWeighted);
+
+            using Mat dstWeighted = new Mat();
+            Cv2.Multiply(dstF, invAlpha3, dstWeighted);
+
+            using Mat blended = new Mat();
+            Cv2.Add(srcWeighted, dstWeighted, blended);
 
             if (target.Channels() == 4)
             {
@@ -59,7 +71,22 @@ public class Blend
                 blended.ConvertTo(blended8u, MatType.CV_8UC3);
                 Mat[] dstChannels = Cv2.Split(target);
                 Mat[] blendedChannels = Cv2.Split(blended8u);
-                Cv2.Merge(new[] { blendedChannels[0], blendedChannels[1], blendedChannels[2], dstChannels[3] }, target);
+                using Mat dstAlphaF = new Mat();
+                dstChannels[3].ConvertTo(dstAlphaF, MatType.CV_32FC1, 1.0 / 255.0);
+
+                using Mat invAlphaF = new Mat();
+                using Mat oneChannel = new Mat(alphaF.Size(), alphaF.Type(), Scalar.All(1.0));
+                Cv2.Subtract(oneChannel, alphaF, invAlphaF);
+
+                using Mat keptDstAlpha = new Mat();
+                Cv2.Multiply(dstAlphaF, invAlphaF, keptDstAlpha);
+
+                using Mat outAlphaF = new Mat();
+                Cv2.Add(alphaF, keptDstAlpha, outAlphaF);
+                using Mat outAlpha = new Mat();
+                outAlphaF.ConvertTo(outAlpha, MatType.CV_8UC1, 255.0);
+
+                Cv2.Merge(new[] { blendedChannels[0], blendedChannels[1], blendedChannels[2], outAlpha }, target);
                 foreach (var c in dstChannels) c.Dispose();
                 foreach (var c in blendedChannels) c.Dispose();
             }

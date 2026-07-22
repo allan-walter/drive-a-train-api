@@ -3,6 +3,23 @@ using OpenCvSharp;
 
 public static class Helpers
 {
+
+    // Change white to transparent, and only return black
+    public static Mat InverseMaskOverlay(Mat mat)
+    {
+        if (mat.Type() != MatType.CV_8UC1)
+            throw new ArgumentException("Mask must be a single-channel 8-bit (CV_8UC1) binary mask.");
+
+        using var alpha = new Mat();
+        Cv2.BitwiseNot(mat, alpha);
+
+        var result = new Mat(mat.Size(), MatType.CV_8UC4);
+        using var black = Mat.Zeros(mat.Size(), MatType.CV_8UC1).ToMat();
+
+        Cv2.Merge([black, black, black, alpha], result);
+
+        return result;
+    }
     
     public static Mat MaskToTransparentOverlay(Mat mask)
     {

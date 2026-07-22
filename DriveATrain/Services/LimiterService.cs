@@ -6,7 +6,7 @@ using OpenCvSharp;
 public class LimiterService
 {
     private VisionConfig config;
-    private Mat blocks;
+    public Mat blocks;
 
     public LimiterService(Config config)
     {

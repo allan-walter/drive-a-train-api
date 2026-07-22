@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DriveATrain.OpenCv;
 using OpenCvSharp;
 
 namespace DriveATrain.Services;
@@ -113,22 +114,7 @@ public class CaptureService : IHostedService
                 // Capture framerate is way heigher than detection, so its fine to just do the overlay here on new cameara frame rather than after actual detection
                 lock (debugOverlayLock)
                 {
-                    // Split debug layer into BGR + alpha
-                    Mat[] channels = Cv2.Split(debugOverlayFrame);
-                    Mat bgr = new Mat();
-                    try
-                    {
-                        Cv2.Merge(new[] { channels[0], channels[1], channels[2] }, bgr);
-
-                        // Copy only where alpha > 0 (channels[3] = alpha, 0 or 255)
-                        bgr.CopyTo(latestFrame, channels[3]);
-                    }
-                    finally
-                    {
-                        bgr.Dispose();
-                        foreach (var channel in channels)
-                            channel.Dispose();
-                    }
+                    // Blend.BlendOverlay(debugOverlayFrame, latestFrame);
                 }
             }
         }

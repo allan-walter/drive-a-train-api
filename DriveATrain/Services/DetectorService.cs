@@ -19,9 +19,10 @@ public class DetectorService(
 
     private static readonly Size Blur = new Size(9, 9);
 
-    Mat goZone = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-        "DriveATrain",
-        "Static Images/go zone.png"), ImreadModes.Grayscale);
+    // Probbaly dont need go zone with it setup better in garage
+    // Mat goZone = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+    //     "DriveATrain",
+    //     "Static Images/go zone.png"), ImreadModes.Grayscale);
 
     private CancellationTokenSource token = new CancellationTokenSource();
 
@@ -40,7 +41,9 @@ public class DetectorService(
     private List<Uncouple>? _pendingConnections;
     private int _publishScheduled;
     private readonly DetectionTimingWindow _detectionTiming = new();
+    public Mat blocks;
 
+    // how can I speed up pixel assignments
     public void Process(Mat frame)
     {
         var processStopwatch = Stopwatch.StartNew();
@@ -56,9 +59,11 @@ public class DetectorService(
             markers = MeasureStage("marker-seeds", () => GetMarkerSeeds(processingFrame, debugFrame));
             using var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
             using var combinedOverlay = Helpers.MaskToTransparentOverlay(combinedMask);
+            using var blocksOverlay = Helpers.InverseMaskOverlay(blocks);
 
-            Cv2.Circle(debugFrame, new Point(200, 200), 20, new Scalar(0, 200, 0, 255), -1);
+            Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
             // Blend.BlendOverlay(combinedOverlay, debugFrame);
+            // Blend.BlendOverlay(blocksOverlay, debugFrame);
 
             var dirMarkers = MeasureStage("direction-markers",
                 () => IdentifyDirectionMarkers(frame, debugFrame, combinedMask));
@@ -266,15 +271,15 @@ public class DetectorService(
 
     private Mat GetDiffMask(Mat liveFrame)
     {
-        using var fgMask = new Mat();
+        var fgMask = new Mat();
 
         const double liveLearningRate = 0.0;
         _mog2.Apply(liveFrame, fgMask, liveLearningRate);
 
-        var cut = new Mat();
-        fgMask.CopyTo(cut, goZone);
+        // var cut = new Mat();
+        // fgMask.CopyTo(cut, goZone);
 
-        return cut;
+        return fgMask;
     }
 
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, Mat mask)
@@ -550,6 +555,11 @@ public class DetectorService(
     public Task StartAsync(CancellationToken cancellationToken)
     {
         DebugWindow.Start();
+        
+        
+        blocks = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "DriveATrain",
+            "Static Images/blocks.png"), ImreadModes.Grayscale);
 
         _mog2 = BackgroundSubtractorMOG2.Create(history: 500, varThreshold: 150.0, detectShadows: true);
 
