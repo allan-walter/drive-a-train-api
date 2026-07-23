@@ -11,6 +11,8 @@ public static class DebugWindow
 
     public static void Start()
     {
+        // TODO this makes the whole stream black if this is run without anything to debug
+        return;
         _uiThread = new Thread(RunLoop) { IsBackground = true };
         _uiThread.Start();
     }

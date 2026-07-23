@@ -19,11 +19,6 @@ public class DetectorService(
 
     private static readonly Size Blur = new Size(9, 9);
 
-    // Probbaly dont need go zone with it setup better in garage
-    // Mat goZone = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-    //     "DriveATrain",
-    //     "Static Images/go zone.png"), ImreadModes.Grayscale);
-
     private CancellationTokenSource token = new CancellationTokenSource();
 
     // public static double CAMERA_WIDTH = 640.0;
@@ -41,7 +36,6 @@ public class DetectorService(
     private List<Uncouple>? _pendingConnections;
     private int _publishScheduled;
     private readonly DetectionTimingWindow _detectionTiming = new();
-    public Mat blocks;
 
     // how can I speed up pixel assignments
     public void Process(Mat frame)
@@ -57,16 +51,18 @@ public class DetectorService(
         try
         {
             markers = MeasureStage("marker-seeds", () => GetMarkerSeeds(processingFrame, debugFrame));
-            using var combinedMask = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
-            using var combinedOverlay = Helpers.MaskToTransparentOverlay(combinedMask);
-            using var blocksOverlay = Helpers.InverseMaskOverlay(blocks);
+            using var combinedMaskColor = Helpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList());
+            using var combinedMaskBinary = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
+            using var blocksOverlay = Helpers.InverseMaskOverlay(config.Vision.blocks);
+            using var goZoneOverlay = Helpers.InverseMaskOverlay(config.Vision.goZone);
 
             Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
-            // Blend.BlendOverlay(combinedOverlay, debugFrame);
-            // Blend.BlendOverlay(blocksOverlay, debugFrame);
+            Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
+            Blend.BlendOverlay(blocksOverlay, debugFrame, 0.4);
+            Blend.BlendOverlay(goZoneOverlay, debugFrame, 0.4);
 
             var dirMarkers = MeasureStage("direction-markers",
-                () => IdentifyDirectionMarkers(frame, debugFrame, combinedMask));
+                () => IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinary));
             var units = MeasureStage("unit-rects", () => GetRects(frame, debugFrame, markers, dirMarkers));
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
@@ -555,11 +551,6 @@ public class DetectorService(
     public Task StartAsync(CancellationToken cancellationToken)
     {
         DebugWindow.Start();
-        
-        
-        blocks = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-            "DriveATrain",
-            "Static Images/blocks.png"), ImreadModes.Grayscale);
 
         _mog2 = BackgroundSubtractorMOG2.Create(history: 500, varThreshold: 150.0, detectShadows: true);
 

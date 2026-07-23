@@ -109,13 +109,6 @@ public class CaptureService : IHostedService
             lock (latestFrameLock)
             {
                 frame.CopyTo(latestFrame);
-
-
-                // Capture framerate is way heigher than detection, so its fine to just do the overlay here on new cameara frame rather than after actual detection
-                lock (debugOverlayLock)
-                {
-                    // Blend.BlendOverlay(debugOverlayFrame, latestFrame);
-                }
             }
         }
     }

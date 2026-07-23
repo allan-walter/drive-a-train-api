@@ -6,14 +6,10 @@ using OpenCvSharp;
 public class LimiterService
 {
     private VisionConfig config;
-    public Mat blocks;
 
     public LimiterService(Config config)
     {
         this.config = config.Vision;
-        blocks = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-            "DriveATrain",
-            "Static Images/blocks.png"), ImreadModes.Grayscale);
     }
 
     public Vector2Int GetNearestBlack(Transform to, Mat mask)
@@ -52,7 +48,7 @@ public class LimiterService
     public SpeedResult ProcessLimits(Mat frame, Transform front, Transform back)
     {
         using var binary = new Mat();
-        Cv2.Threshold(blocks, binary, 254.0, 255.0, ThresholdTypes.Binary);
+        Cv2.Threshold(config.blocks, binary, 254.0, 255.0, ThresholdTypes.Binary);
 
         using var distMap = new Mat();
         Cv2.DistanceTransform(binary, distMap, DistanceTypes.L2, DistanceTransformMasks.Mask5);

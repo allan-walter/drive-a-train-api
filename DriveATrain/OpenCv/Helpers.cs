@@ -3,7 +3,6 @@ using OpenCvSharp;
 
 public static class Helpers
 {
-
     // Change white to transparent, and only return black
     public static Mat InverseMaskOverlay(Mat mat)
     {
@@ -21,27 +20,7 @@ public static class Helpers
         return result;
     }
     
-    public static Mat MaskToTransparentOverlay(Mat mask)
-    {
-        if (mask.Type() != MatType.CV_8UC1)
-            throw new ArgumentException("Mask must be a single-channel 8-bit (CV_8UC1) binary mask.");
-
-        // Result: white where mask is white, transparent where mask is black
-        Mat result = new Mat(mask.Size(), MatType.CV_8UC4);
-
-        Mat[] channels = new Mat[]
-        {
-            mask, // B - white where mask is white
-            mask, // G
-            mask, // R
-            mask  // A - alpha follows the mask too (0 = transparent, 255 = opaque)
-        };
-
-        Cv2.Merge(channels, result);
-
-        return result;
-    }
-    
+    // Combine masks, keeping it binary
     public static Mat CombineMasks(List<Mat> masks)
     {
         var type = MatType.CV_8UC1;
@@ -60,6 +39,35 @@ public static class Helpers
                 throw new ArgumentException("Not binary type");
 
             Cv2.BitwiseOr(result, mask, result);
+        }
+
+        return result;
+    }
+
+    // Combine a list of masks into a color version of their mask, with a transparent background instead of black
+    public static Mat CombineMasksColor(List<(Mat Mask, LookupColor Color)> maskColorPairs)
+    {
+        var type = MatType.CV_8UC1;
+
+        if (maskColorPairs.Count == 0)
+        {
+            // Default to 4-channel transparent output
+            return Mat.Zeros(new Size(CaptureService.width, CaptureService.height), MatType.CV_8UC4).ToMat();
+        }
+
+        var size = maskColorPairs[0].Mask.Size();
+        var result = Mat.Zeros(size, MatType.CV_8UC4).ToMat(); // all-zero = fully transparent
+
+        foreach (var (mask, color) in maskColorPairs)
+        {
+            if (mask.Size() != size)
+                throw new ArgumentException("All masks must have the same size");
+            if (mask.Type() != type)
+                throw new ArgumentException("Not binary type");
+
+            // Build a BGRA color with full alpha where the mask is set
+            var bgraColor = new Scalar(color.SingleColor.Val0, color.SingleColor.Val1, color.SingleColor.Val2, 255);
+            result.SetTo(bgraColor, mask);
         }
 
         return result;

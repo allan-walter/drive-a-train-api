@@ -18,7 +18,7 @@ public class Blend
     /// <param name="source">Source overlay image, must be BGRA (4 channels).</param>
     /// <param name="target">Destination image (BGR or BGRA), modified in place.</param>
     /// <param name="opacity">Global opacity multiplier, 0.0 (invisible) to 1.0 (full source alpha).</param>
-    public static void BlendOverlay(Mat source, Mat target, double opacity = 0.2)
+    public static void BlendOverlay(Mat source, Mat target, double opacity)
     {
         if (source.Channels() != 4)
             throw new ArgumentException("source must be BGRA (4 channels)");

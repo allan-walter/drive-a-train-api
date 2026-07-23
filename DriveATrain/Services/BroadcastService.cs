@@ -7,6 +7,7 @@ using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using DriveATrain;
 using DriveATrain.Audio;
+using DriveATrain.OpenCv;
 using DriveATrain.Services;
 using NAudio.Wave;
 using NLayer.NAudioSupport;
@@ -208,6 +209,15 @@ public class BroadcastService : IHostedService, IDisposable
             {
                 Task.Delay(5); // avoid a hot spin when no frame is ready yet
                 continue;
+            }
+
+
+            // TODO this is no longer exactly correct but the point still stands
+            // Capture framerate is way heigher than detection, so its fine to just do the overlay here on new cameara frame rather than after actual detection
+            lock (_captureService.debugOverlayLock)
+            {
+                // _captureService.debugOverlayFrame.SaveImage("debug overlay.png");
+                Blend.BlendOverlay(_captureService.debugOverlayFrame, frame, 1);
             }
 
             // IT won't error if we throw more frames at the decoder but it does slow it down for no benefit
