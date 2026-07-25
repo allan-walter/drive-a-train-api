@@ -48,18 +48,34 @@ public class DetectorService(
             new Scalar(0, 0, 0, 0));
         List<MarkerDef>? markers = null;
 
+        Mat combinedMaskBinary = null;
         try
         {
             markers = MeasureStage("marker-seeds", () => GetMarkerSeeds(processingFrame, debugFrame));
-            using var combinedMaskColor = Helpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList());
-            using var combinedMaskBinary = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
-            using var blocksOverlay = Helpers.InverseMaskOverlay(config.Vision.blocks);
-            using var goZoneOverlay = Helpers.InverseMaskOverlay(config.Vision.goZone);
 
-            Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
-            Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
-            Blend.BlendOverlay(blocksOverlay, debugFrame, 0.4);
-            Blend.BlendOverlay(goZoneOverlay, debugFrame, 0.4);
+
+            MeasureStage("overlay", () =>
+            {
+                using var combinedMaskColor = MeasureStage("overlay.combine-mask-color",
+                    () => Helpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList()));
+                combinedMaskBinary = MeasureStage("overlay.combine-mask-binary",
+                    () => Helpers.CombineMasks(markers.Select(m => m.Mask).ToList()));
+                using var blocksOverlay = MeasureStage("overlay.blocks-overlay",
+                    () => Helpers.InverseMaskOverlay(config.Vision.blocks));
+                using var goZoneOverlay = MeasureStage("overlay.gozone-overlay",
+                    () => Helpers.InverseMaskOverlay(config.Vision.goZone));
+
+                MeasureStage("overlay.blend", () =>
+                {
+                    Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
+                    Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
+                    
+                    if (_blocksOverlayPrepared != null)
+                        Blend.BlendPrepared(_blocksOverlayPrepared, debugFrame);
+                    if (_goZoneOverlayPrepared != null)
+                        Blend.BlendPrepared(_goZoneOverlayPrepared, debugFrame);
+                });
+            });
 
             var dirMarkers = MeasureStage("direction-markers",
                 () => IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinary));
@@ -110,6 +126,8 @@ public class DetectorService(
                 foreach (var marker in markers)
                     marker.Mask.Dispose();
             }
+
+            combinedMaskBinary?.Dispose();
 
             _detectionTiming.RecordFrame(processStopwatch.Elapsed);
         }
@@ -172,8 +190,8 @@ public class DetectorService(
         MeasureStage("marker-seeds.morph-open-small", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen));
 
         // Dilation then eriosion, fill gaps and join blobs
-        using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
-        MeasureStage("marker-seeds.morph-close", () => Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose));
+        // using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
+        // MeasureStage("marker-seeds.morph-close", () => Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose));
 
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
         using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
@@ -424,13 +442,12 @@ public class DetectorService(
         // Step 2: distance transform per color
         MeasureStage("marker-seeds.color-segmentation.distance-transform", () =>
         {
+            using var inv = new Mat(); // reused across iterations, not reallocated per-i
             for (int i = 0; i < n; i++)
             {
-                using var inv = new Mat();
                 Cv2.BitwiseNot(colorMasks[i], inv);
-
                 distMaps[i] = new Mat();
-                Cv2.DistanceTransform(inv, distMaps[i], DistanceTypes.L2, DistanceTransformMasks.Mask5);
+                Cv2.DistanceTransform(inv, distMaps[i], DistanceTypes.L2, DistanceTransformMasks.Mask3);
             }
         });
 
@@ -441,29 +458,27 @@ public class DetectorService(
 
         MeasureStage("marker-seeds.color-segmentation.pixel-assignment", () =>
         {
-            int rows = mask.Rows;
-            for (int y = 0; y < rows; y++)
+            // Running best-distance and best-index maps, same size as mask
+            using var bestDist = new Mat(mask.Size(), MatType.CV_32FC1, new Scalar(float.MaxValue));
+            using var bestIdx = new Mat(mask.Size(), MatType.CV_32SC1, new Scalar(-1));
+
+            for (int i = 0; i < n; i++)
             {
-                int cols = mask.Cols;
-                for (int x = 0; x < cols; x++)
-                {
-                    if (mask.At<byte>(y, x) == 0) continue;
+                // where this map beats the current best
+                using var better = new Mat();
+                Cv2.Compare(distMaps[i], bestDist, better, CmpTypes.LT);
 
-                    int bestIndex = -1;
-                    float bestDist = float.MaxValue;
-                    for (int i = 0; i < n; i++)
-                    {
-                        float d = distMaps[i].At<float>(y, x);
-                        if (d < bestDist)
-                        {
-                            bestDist = d;
-                            bestIndex = i;
-                        }
-                    }
+                distMaps[i].CopyTo(bestDist, better);
 
-                    if (bestIndex >= 0)
-                        results[bestIndex].Set(y, x, (byte)255);
-                }
+                using var idxMat = new Mat(mask.Size(), MatType.CV_32SC1, new Scalar(i));
+                idxMat.CopyTo(bestIdx, better);
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                using var isIndex = new Mat();
+                Cv2.Compare(bestIdx, new Scalar(i), isIndex, CmpTypes.EQ);
+                Cv2.BitwiseAnd(isIndex, mask, results[i]);
             }
         });
 
@@ -548,9 +563,19 @@ public class DetectorService(
     }
 
     private Task? processLoop;
+    private Blend.PreparedOverlay? _blocksOverlayPrepared;
+    private Blend.PreparedOverlay? _goZoneOverlayPrepared;
+
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+// once at startup
+        using var blocksOverlaySrc = Helpers.InverseMaskOverlay(config.Vision.blocks);
+        _blocksOverlayPrepared = Blend.Prepare(blocksOverlaySrc, 0.4);
+
+        using var goZoneOverlaySrc = Helpers.InverseMaskOverlay(config.Vision.goZone);
+        _goZoneOverlayPrepared = Blend.Prepare(goZoneOverlaySrc, 0.4);
+
         _mog2 = BackgroundSubtractorMOG2.Create(history: 500, varThreshold: 150.0, detectShadows: true);
 
         var outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DriveATrain",
