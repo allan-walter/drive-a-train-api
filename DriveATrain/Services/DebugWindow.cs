@@ -6,19 +6,20 @@ namespace DriveATrain.Services;
 public static class DebugWindow
 {
     private static readonly BlockingCollection<(string Name, Mat Frame)> _queue = new();
-    private static Thread _uiThread;
+    private static Thread? _uiThread;
     private static readonly ConcurrentDictionary<string, Mat> _latest = new();
 
-    public static void Start()
+    private static void Start()
     {
-        // TODO this makes the whole stream black if this is run without anything to debug
-        return;
         _uiThread = new Thread(RunLoop) { IsBackground = true };
         _uiThread.Start();
     }
 
     public static void Show(string title, Mat mat)
     {
+        if (_uiThread == null)
+            Start();
+        
         // Clone because caller may dispose/reuse the Mat
         _queue.Add((title, mat.Clone()));
     }

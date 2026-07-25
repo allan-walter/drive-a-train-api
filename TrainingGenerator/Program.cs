@@ -57,7 +57,7 @@ class TrainingFrameCapture
 
         while (savedFrames < maxFramesToSave && camera.Read(frame) && !frame.Empty())
         {
-            var flip = true;
+            var flip = false;
             if (flip)
             {
                 Cv2.Flip(frame, frame, FlipMode.Y); // 1 in OpenCV = horizontal flip = FlipMode.Y

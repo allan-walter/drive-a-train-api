@@ -267,15 +267,16 @@ public class DetectorService(
 
     private Mat GetDiffMask(Mat liveFrame)
     {
-        var fgMask = new Mat();
+        using var fgMask = new Mat();
 
         const double liveLearningRate = 0.0;
         _mog2.Apply(liveFrame, fgMask, liveLearningRate);
 
-        // var cut = new Mat();
-        // fgMask.CopyTo(cut, goZone);
+        // DebugWindow.Show("Raw diff", fgMask.Clone());
+        var cut = new Mat();
+        fgMask.CopyTo(cut, config.Vision.goZone);
 
-        return fgMask;
+        return cut;
     }
 
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, Mat mask)
@@ -550,8 +551,6 @@ public class DetectorService(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        DebugWindow.Start();
-
         _mog2 = BackgroundSubtractorMOG2.Create(history: 500, varThreshold: 150.0, detectShadows: true);
 
         var outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DriveATrain",
