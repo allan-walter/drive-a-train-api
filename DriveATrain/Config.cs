@@ -1,4 +1,5 @@
-﻿using OpenCvSharp;
+﻿using DriveATrain.Services;
+using OpenCvSharp;
 
 namespace DriveATrain;
 
@@ -51,10 +52,16 @@ public class VisionConfig
     public Mat goZone = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
         "DriveATrain",
         "Static Images/go zone.png"), ImreadModes.Grayscale);
-    
+
     public Mat blocks = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
         "DriveATrain",
         "Static Images/blocks.png"), ImreadModes.Grayscale);
+
+    public VisionConfig()
+    {
+        Cv2.Resize(goZone, goZone, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
+        Cv2.Resize(blocks, blocks, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
+    }
 }
 
 public class AppConfig

@@ -17,7 +17,7 @@ public class DetectorService(
 {
     private BackgroundSubtractorMOG2 _mog2;
 
-    private static readonly Size Blur = new Size(9, 9);
+    private static Size Blur;
 
     private CancellationTokenSource token = new CancellationTokenSource();
 
@@ -37,14 +37,16 @@ public class DetectorService(
     private int _publishScheduled;
     private readonly DetectionTimingWindow _detectionTiming = new();
 
-    // how can I speed up pixel assignments
     public void Process(Mat frame)
     {
         var processStopwatch = Stopwatch.StartNew();
         // DebugWindow.Show("test frame", frame.Clone());
-        using var processingFrame = frame.Clone();
+        using var processingFrame = new Mat();
+        Cv2.Resize(frame, processingFrame, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
+
         // Transparent with debug info on top. This is overlayed over the actual frame at the end
-        using var debugFrame = new Mat(new Size(CaptureService.width, CaptureService.height), MatType.CV_8UC4,
+        using var debugFrame = new Mat(new Size(CaptureService.detectionWidth, CaptureService.detectionHeight),
+            MatType.CV_8UC4,
             new Scalar(0, 0, 0, 0));
         List<MarkerDef>? markers = null;
 
@@ -69,7 +71,7 @@ public class DetectorService(
                 {
                     Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
                     Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
-                    
+
                     if (_blocksOverlayPrepared != null)
                         Blend.BlendPrepared(_blocksOverlayPrepared, debugFrame);
                     if (_goZoneOverlayPrepared != null)
@@ -78,15 +80,15 @@ public class DetectorService(
             });
 
             var dirMarkers = MeasureStage("direction-markers",
-                () => IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinary));
-            var units = MeasureStage("unit-rects", () => GetRects(frame, debugFrame, markers, dirMarkers));
+                () => IdentifyDirectionMarkers(processingFrame, debugFrame, combinedMaskBinary));
+            var units = MeasureStage("unit-rects", () => GetRects(processingFrame, debugFrame, markers, dirMarkers));
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
             if (train != null)
             {
                 var limits = MeasureStage("speed-limits",
-                    () => limiterService.ProcessLimits(frame, train.Front, train.Back));
+                    () => limiterService.ProcessLimits(processingFrame, train.Front, train.Back));
                 dccService.SetLimits(limits.Forward, limits.Reverse);
             }
             else
@@ -156,6 +158,8 @@ public class DetectorService(
             if (!frame.Empty())
             {
                 Cv2.GaussianBlur(frame, frame, Blur, 0);
+
+                Cv2.Resize(frame, frame, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
                 // Cv2.Add(frame, new Scalar(-50, -50, -50), frame);
 
                 _mog2.Apply(frame, fgMask, 0.01);
@@ -186,7 +190,8 @@ public class DetectorService(
         MeasureStage("marker-seeds.threshold", () => Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary));
 
         // Erosion then dilation, renmove noise
-        using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(3, 3));
+        int openSize = (int)ResolutionScaler.ScaleValue(3);
+        using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
         MeasureStage("marker-seeds.morph-open-small", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen));
 
         // Dilation then eriosion, fill gaps and join blobs
@@ -194,13 +199,16 @@ public class DetectorService(
         // MeasureStage("marker-seeds.morph-close", () => Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose));
 
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
-        using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(15, 15));
+        int open2Size = (int)ResolutionScaler.ScaleValue(15);
+        using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
         MeasureStage("marker-seeds.morph-open-large", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2));
 
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
         // A bit of blur so there is more of an average color to find
-        MeasureStage("marker-seeds.color-blur", () => Cv2.GaussianBlur(frame, blurredFrame, new Size(21, 21), 0));
+        int blurSize = (int)ResolutionScaler.ScaleValue(21);
+        MeasureStage("marker-seeds.color-blur",
+            () => Cv2.GaussianBlur(frame, blurredFrame, new Size(blurSize, blurSize), 0));
         blurredFrame.CopyTo(cutout, res);
 
         var colorMasks = MeasureStage("marker-seeds.color-segmentation",
@@ -237,7 +245,7 @@ public class DetectorService(
                     {
                         // TODO gross but works for now to filter out extra detected stuff. In future when background is not yellow should be easier to only detect one color
                         double area = Cv2.ContourArea(contour);
-                        if (area <= 3000)
+                        if (area <= ResolutionScaler.ScaleArea(3000))
                             continue;
 
                         contourMatch = contour;
@@ -327,7 +335,7 @@ public class DetectorService(
                 var rect = Cv2.MinAreaRect(contour2f);
                 var center = rect.Center;
 
-                if (area > 13 && area < 30)
+                if (area > ResolutionScaler.ScaleArea(13) && area < ResolutionScaler.ScaleArea(30))
                 {
                     // Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Green, -1);
                 }
@@ -569,6 +577,8 @@ public class DetectorService(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        int size = (int)ResolutionScaler.ScaleValue(9);
+        Blur = new Size(size, size);
 // once at startup
         using var blocksOverlaySrc = Helpers.InverseMaskOverlay(config.Vision.blocks);
         _blocksOverlayPrepared = Blend.Prepare(blocksOverlaySrc, 0.4);

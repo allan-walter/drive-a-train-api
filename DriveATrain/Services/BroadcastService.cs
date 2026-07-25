@@ -217,7 +217,9 @@ public class BroadcastService : IHostedService, IDisposable
             lock (_captureService.debugOverlayLock)
             {
                 // _captureService.debugOverlayFrame.SaveImage("debug overlay.png");
-                Blend.BlendOverlay(_captureService.debugOverlayFrame, frame, 1);
+                using var expanded = new Mat();
+                Cv2.Resize(_captureService.debugOverlayFrame, expanded, new Size(CaptureService.width, CaptureService.height));
+                Blend.BlendOverlay(expanded, frame, 1);
             }
 
             // IT won't error if we throw more frames at the decoder but it does slow it down for no benefit
