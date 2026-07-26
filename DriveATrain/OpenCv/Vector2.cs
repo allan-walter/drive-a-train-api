@@ -1,4 +1,5 @@
 ﻿using System.Drawing;
+using OpenCvSharp;
 
 namespace DriveATrain.OpenCv;
 
@@ -29,7 +30,7 @@ public readonly struct Vector2Double
         obj is Vector2Double other && X.Equals(other.X) && Y.Equals(other.Y);
 
     public override int GetHashCode() => HashCode.Combine(X, Y);
-    
+
     public Vector2Double Rotate90CW()
     {
         return new Vector2Double(Y, -X);
@@ -61,9 +62,9 @@ public readonly struct Vector2Int
     public static Vector2Int operator *(Vector2Int v, int scalar) =>
         new Vector2Int(v.X * scalar, v.Y * scalar);
 
-    public Point ToPoint()
+    public OpenCvSharp.Point ToPoint()
     {
-        return new Point(X, Y);
+        return new OpenCvSharp.Point(X, Y);
     }
 
     public bool HasPassed(Vector2Int target, Vector2Double direction)

@@ -45,7 +45,7 @@ public class LimiterService
         return new Vector2Int(nearestX, nearestY);
     }
 
-    public SpeedResult ProcessLimits(Mat frame, Transform front, Transform back)
+    public SpeedResult ProcessLimits(Mat frame, Transform front, Transform back, Mat debugFrame)
     {
         using var binary = new Mat();
         Cv2.Threshold(config.blocks, binary, 254.0, 255.0, ThresholdTypes.Binary);
@@ -79,19 +79,27 @@ public class LimiterService
                 && front.Position.HasPassed(closestBlack, front.Direction))
             {
                 limits.Forward = SpeedLimit.STOP;
+
+                // Red
+                Cv2.Circle(debugFrame, closestBlack.ToPoint(), 4, new Scalar(0, 0, 255, 255), -1);
             }
             else if (frontDist < config.StopWhenPixelsLessThan)
             {
                 limits.Forward = SpeedLimit.STOP;
+                // Red
+                Cv2.Circle(debugFrame, closestBlack.ToPoint(), 4, new Scalar(0, 0, 255, 255), -1);
             }
             else if (frontDist < config.SlowWhenPixelsLessThan)
             {
                 limits.Forward = SpeedLimit.SLOW;
+                // Orange
+                Cv2.Circle(debugFrame, closestBlack.ToPoint(), 4, new Scalar(0, 165, 255, 255), -1);
             }
         }
         else
         {
             limits.Forward = SpeedLimit.STOP;
+            // Cv2.Circle(debugFrame, closestBlack.ToPoint(), 4, new Scalar(0, 165, 255, 255), -1);
         }
 
         if (back.Position.Y < distMap.Rows && back.Position.X < distMap.Cols)

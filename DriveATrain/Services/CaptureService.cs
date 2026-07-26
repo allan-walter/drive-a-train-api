@@ -11,7 +11,7 @@ public class CaptureService : IHostedService
     public const int fps = 30;
 
     public const int detectionWidth = width / 4;
-    public const int detectionHeight = height / 2;
+    public const int detectionHeight = height / 4;
     // public const int detectionWidth = width;
     // public const int detectionHeight = height;
 

@@ -26,11 +26,12 @@ public static class ResolutionScaler
     }
 
     // Kernal values need to be odd
+    // TODO delete this can just get the values right, with as lower resolution as possible. This doesnt really scale well enough, its not really linier
     public static int ScaleKernel(float value)
     {
         var scaled = (int)ScaleValue(value);
         if (scaled % 2 == 0)
-            scaled--;
+            scaled++;
 
         return scaled;
     }

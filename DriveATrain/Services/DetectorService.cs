@@ -81,7 +81,7 @@ public class DetectorService(
             if (train != null)
             {
                 var limits = MeasureStage("speed-limits",
-                    () => limiterService.ProcessLimits(processingFrame, train.Front, train.Back));
+                    () => limiterService.ProcessLimits(processingFrame, train.Front, train.Back, debugFrame));
                 dccService.SetLimits(limits.Forward, limits.Reverse);
             }
             else
@@ -185,14 +185,18 @@ public class DetectorService(
 
         MeasureStage("marker-seeds.threshold", () => Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary));
 
+        
+        // DebugWindow.Show("Step 0", res.Clone());
         // Erosion then dilation, renmove noise
-        int openSize = (int)ResolutionScaler.ScaleKernel(3);
+        int openSize = 3;//(int)ResolutionScaler.ScaleKernel(3);
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
         MeasureStage("marker-seeds.morph-open-small", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen));
 
+        // DebugWindow.Show("Step 1", res.Clone());
         // Dilation then eriosion, fill gaps and join blobs
-        // using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(53, 53));
-        // MeasureStage("marker-seeds.morph-close", () => Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose));
+        int closeSize = ResolutionScaler.ScaleKernel(30);
+        using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(closeSize, closeSize));
+        MeasureStage("marker-seeds.morph-close", () => Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose));
 
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
         int open2Size = (int)ResolutionScaler.ScaleKernel(15);
@@ -206,6 +210,8 @@ public class DetectorService(
         MeasureStage("marker-seeds.color-blur",
             () => Cv2.GaussianBlur(frame, blurredFrame, new Size(blurSize, blurSize), 0));
         blurredFrame.CopyTo(cutout, res);
+        
+        // DebugWindow.Show("after cleanup", res.Clone());
 
         var colorMasks = MeasureStage("marker-seeds.color-segmentation",
             () => SplitMaskByNearestColorRegion(blurredFrame, res,
@@ -297,6 +303,8 @@ public class DetectorService(
         // DebugWindow.Show("Raw diff", fgMask.Clone());
         var cut = new Mat();
         fgMask.CopyTo(cut, config.Vision.goZone);
+        
+        // DebugWindow.Show("Raw diff", cut.Clone());
 
         return cut;
     }
@@ -331,14 +339,16 @@ public class DetectorService(
                 var rect = Cv2.MinAreaRect(contour2f);
                 var center = rect.Center;
 
-                if (area > ResolutionScaler.ScaleArea(13) && area < ResolutionScaler.ScaleArea(30))
-                {
-                    // Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Green, -1);
-                }
-                else
-                {
-                    // Cv2.Circle(debugFrame, center.ToPoint(), 3, Scalar.Red, -1);
-                }
+                // if (area > ResolutionScaler.ScaleArea(13) && area < ResolutionScaler.ScaleArea(30))
+                // {
+                // TODO now with low res the area is < 1, but it doesnt seem to be detecting extra stuff so maybe its fine
+                    Cv2.Circle(debugFrame, center.ToPoint(), 3, new Scalar(0, 255, 0, 255), -1);
+                    markers.Add(center.ToPoint());
+                // }
+                // else
+                // {
+                //     Cv2.Circle(debugFrame, center.ToPoint(), 3, new Scalar(0, 0, 255, 255), -1);
+                // }
 
                 // Cv2.PutText(debugFrame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 1, Scalar.Orange, 2);
             }
@@ -701,8 +711,8 @@ public class DetectorService(
                     stage.Reset();
             }
 
-            Debug.WriteLine(message);
-            Console.WriteLine(message);
+            // Debug.WriteLine(message);
+            // Console.WriteLine(message);
         }
 
         private List<string> BuildStageSummary()
