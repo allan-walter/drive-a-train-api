@@ -26,12 +26,6 @@ public class DetectorService(
     public static double CAMERA_WIDTH = 1920.0;
     public static double CAMERA_HEIGHT = 1080.0;
 
-    public static int STREAM_WIDTH = 1920;
-    public static int STREAM_HEIGHT = 1080;
-    public static int STREAM_FPS = 30;
-
-    public Mat currentDebugFrame = new Mat();
-
     private LiveData? _pendingLiveData;
     private List<Uncouple>? _pendingConnections;
     private int _publishScheduled;
@@ -54,7 +48,6 @@ public class DetectorService(
         try
         {
             markers = MeasureStage("marker-seeds", () => GetMarkerSeeds(processingFrame, debugFrame));
-
 
             MeasureStage("overlay", () =>
             {
@@ -186,11 +179,14 @@ public class DetectorService(
 
         using var res = MeasureStage("marker-seeds.diff-mask", () => GetDiffMask(frame));
 
+        // using var color = new Mat();
+        // Cv2.CvtColor(res, color, ColorConversionCodes.BGR2BGRA);
+        // Blend.BlendOverlay(color, debugFrame, 0.75);
 
         MeasureStage("marker-seeds.threshold", () => Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary));
 
         // Erosion then dilation, renmove noise
-        int openSize = (int)ResolutionScaler.ScaleValue(3);
+        int openSize = (int)ResolutionScaler.ScaleKernel(3);
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
         MeasureStage("marker-seeds.morph-open-small", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen));
 
@@ -199,14 +195,14 @@ public class DetectorService(
         // MeasureStage("marker-seeds.morph-close", () => Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose));
 
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
-        int open2Size = (int)ResolutionScaler.ScaleValue(15);
+        int open2Size = (int)ResolutionScaler.ScaleKernel(15);
         using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
         MeasureStage("marker-seeds.morph-open-large", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2));
 
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
         // A bit of blur so there is more of an average color to find
-        int blurSize = (int)ResolutionScaler.ScaleValue(21);
+        int blurSize = (int)ResolutionScaler.ScaleKernel(21);
         MeasureStage("marker-seeds.color-blur",
             () => Cv2.GaussianBlur(frame, blurredFrame, new Size(blurSize, blurSize), 0));
         blurredFrame.CopyTo(cutout, res);
@@ -577,7 +573,7 @@ public class DetectorService(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        int size = (int)ResolutionScaler.ScaleValue(9);
+        int size = ResolutionScaler.ScaleKernel(9);
         Blur = new Size(size, size);
 // once at startup
         using var blocksOverlaySrc = Helpers.InverseMaskOverlay(config.Vision.blocks);

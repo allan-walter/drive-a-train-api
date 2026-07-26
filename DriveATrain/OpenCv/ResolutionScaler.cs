@@ -25,6 +25,16 @@ public static class ResolutionScaler
         return value * scale;
     }
 
+    // Kernal values need to be odd
+    public static int ScaleKernel(float value)
+    {
+        var scaled = (int)ScaleValue(value);
+        if (scaled % 2 == 0)
+            scaled--;
+
+        return scaled;
+    }
+
     public static float ScaleValue(float value)
     {
         return ScaleValue(value, 1920, 1080, CaptureService.detectionWidth, CaptureService.detectionHeight);
