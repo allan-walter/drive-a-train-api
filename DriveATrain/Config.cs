@@ -1,4 +1,6 @@
-﻿using DriveATrain.Services;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
+using DriveATrain.Services;
 using OpenCvSharp;
 
 namespace DriveATrain;
@@ -53,14 +55,20 @@ public class VisionConfig
         "DriveATrain",
         "Static Images/go zone.png"), ImreadModes.Grayscale);
 
-    public Mat blocks = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-        "DriveATrain",
-        "Static Images/blocks.png"), ImreadModes.Grayscale);
+    [JsonIgnore] public Layout Layout;
 
     public VisionConfig()
     {
         Cv2.Resize(goZone, goZone, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
-        Cv2.Resize(blocks, blocks, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
+
+        string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DriveATrain",
+            "Static Images/layout.json");
+        string jsonString = File.ReadAllText(filePath);
+
+        Layout = JsonSerializer.Deserialize<Layout>(jsonString, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
     }
 }
 
@@ -68,4 +76,37 @@ public class AppConfig
 {
     public bool FirstRun { get; set; }
     public bool Headless { get; set; }
+}
+
+public class Layout
+{
+    public List<List<LayoutPoint>> Paths { get; set; }
+    public List<LayoutBlock> Blocks { get; set; }
+}
+
+public class LayoutBlock
+{
+    public LayoutPoint Point { get; set; }
+    public int Distance { get; set; }
+}
+
+public class LayoutPoint
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+
+    public Point ToPoint()
+    {
+        return new Point(X, Y);
+    }
+
+    public LayoutPoint()
+    {
+    }
+
+    public LayoutPoint(int x, int y)
+    {
+        X = x;
+        Y = y;
+    }
 }

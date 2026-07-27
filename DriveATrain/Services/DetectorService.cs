@@ -55,8 +55,8 @@ public class DetectorService(
                     () => Helpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList()));
                 combinedMaskBinary = MeasureStage("overlay.combine-mask-binary",
                     () => Helpers.CombineMasks(markers.Select(m => m.Mask).ToList()));
-                using var blocksOverlay = MeasureStage("overlay.blocks-overlay",
-                    () => Helpers.InverseMaskOverlay(config.Vision.blocks));
+                // using var blocksOverlay = MeasureStage("overlay.blocks-overlay",
+                //     () => Helpers.InverseMaskOverlay(config.Vision.blocks));
                 using var goZoneOverlay = MeasureStage("overlay.gozone-overlay",
                     () => Helpers.InverseMaskOverlay(config.Vision.goZone));
 
@@ -65,8 +65,8 @@ public class DetectorService(
                     Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
                     Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
 
-                    if (_blocksOverlayPrepared != null)
-                        Blend.BlendPrepared(_blocksOverlayPrepared, debugFrame);
+                    if (layoutOverlayPrepared != null)
+                        Blend.BlendPrepared(layoutOverlayPrepared, debugFrame);
                     if (_goZoneOverlayPrepared != null)
                         Blend.BlendPrepared(_goZoneOverlayPrepared, debugFrame);
                 });
@@ -75,6 +75,8 @@ public class DetectorService(
             var dirMarkers = MeasureStage("direction-markers",
                 () => IdentifyDirectionMarkers(processingFrame, debugFrame, combinedMaskBinary));
             var units = MeasureStage("unit-rects", () => GetRects(processingFrame, debugFrame, markers, dirMarkers));
+            
+            LayoutDraw.DrawUnits(debugFrame, units);
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
@@ -185,10 +187,10 @@ public class DetectorService(
 
         MeasureStage("marker-seeds.threshold", () => Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary));
 
-        
+
         // DebugWindow.Show("Step 0", res.Clone());
         // Erosion then dilation, renmove noise
-        int openSize = 3;//(int)ResolutionScaler.ScaleKernel(3);
+        int openSize = 3; //(int)ResolutionScaler.ScaleKernel(3);
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
         MeasureStage("marker-seeds.morph-open-small", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen));
 
@@ -210,7 +212,7 @@ public class DetectorService(
         MeasureStage("marker-seeds.color-blur",
             () => Cv2.GaussianBlur(frame, blurredFrame, new Size(blurSize, blurSize), 0));
         blurredFrame.CopyTo(cutout, res);
-        
+
         // DebugWindow.Show("after cleanup", res.Clone());
 
         var colorMasks = MeasureStage("marker-seeds.color-segmentation",
@@ -303,7 +305,7 @@ public class DetectorService(
         // DebugWindow.Show("Raw diff", fgMask.Clone());
         var cut = new Mat();
         fgMask.CopyTo(cut, config.Vision.goZone);
-        
+
         // DebugWindow.Show("Raw diff", cut.Clone());
 
         return cut;
@@ -342,8 +344,8 @@ public class DetectorService(
                 // if (area > ResolutionScaler.ScaleArea(13) && area < ResolutionScaler.ScaleArea(30))
                 // {
                 // TODO now with low res the area is < 1, but it doesnt seem to be detecting extra stuff so maybe its fine
-                    Cv2.Circle(debugFrame, center.ToPoint(), 3, new Scalar(0, 255, 0, 255), -1);
-                    markers.Add(center.ToPoint());
+                Cv2.Circle(debugFrame, center.ToPoint(), 3, new Scalar(0, 255, 0, 255), -1);
+                markers.Add(center.ToPoint());
                 // }
                 // else
                 // {
@@ -577,7 +579,7 @@ public class DetectorService(
     }
 
     private Task? processLoop;
-    private Blend.PreparedOverlay? _blocksOverlayPrepared;
+    private Blend.PreparedOverlay? layoutOverlayPrepared;
     private Blend.PreparedOverlay? _goZoneOverlayPrepared;
 
 
@@ -586,8 +588,8 @@ public class DetectorService(
         int size = ResolutionScaler.ScaleKernel(9);
         Blur = new Size(size, size);
 // once at startup
-        using var blocksOverlaySrc = Helpers.InverseMaskOverlay(config.Vision.blocks);
-        _blocksOverlayPrepared = Blend.Prepare(blocksOverlaySrc, 0.4);
+        using var layoutOverlay = LayoutDraw.DrawLayout(config);
+        layoutOverlayPrepared = Blend.Prepare(layoutOverlay, 1);
 
         using var goZoneOverlaySrc = Helpers.InverseMaskOverlay(config.Vision.goZone);
         _goZoneOverlayPrepared = Blend.Prepare(goZoneOverlaySrc, 0.4);
@@ -653,155 +655,6 @@ public class DetectorService(
         finally
         {
             _detectionTiming.RecordStage(stageName, stopwatch.Elapsed);
-        }
-    }
-
-    private sealed class DetectionTimingWindow
-    {
-        private static readonly TimeSpan LogInterval = TimeSpan.FromSeconds(1);
-
-        private readonly object _sync = new();
-        private readonly Stopwatch _windowStopwatch = Stopwatch.StartNew();
-        private readonly Dictionary<string, StageTiming> _stages = new();
-        private readonly List<string> _stageOrder = [];
-        private int _frameCount;
-        private TimeSpan _frameElapsed = TimeSpan.Zero;
-
-        public void RecordStage(string stageName, TimeSpan elapsed)
-        {
-            lock (_sync)
-            {
-                if (!_stages.TryGetValue(stageName, out var stage))
-                {
-                    stage = new StageTiming();
-                    _stages[stageName] = stage;
-                    _stageOrder.Add(stageName);
-                }
-
-                stage.CallCount++;
-                stage.TotalElapsed += elapsed;
-            }
-        }
-
-        public void RecordFrame(TimeSpan elapsed)
-        {
-            string? message = null;
-
-            lock (_sync)
-            {
-                _frameCount++;
-                _frameElapsed += elapsed;
-
-                if (_windowStopwatch.Elapsed < LogInterval || _frameCount == 0)
-                    return;
-
-                double processedFps = _frameCount / _windowStopwatch.Elapsed.TotalSeconds;
-                double averageFrameMs = _frameElapsed.TotalMilliseconds / _frameCount;
-                var stageSummary = BuildStageSummary();
-
-                message = $"[detect] total: {processedFps:F2} fps ({averageFrameMs:F2} ms/frame)";
-                if (stageSummary.Count > 0)
-                    message += Environment.NewLine + string.Join(Environment.NewLine, stageSummary);
-
-                _frameCount = 0;
-                _frameElapsed = TimeSpan.Zero;
-                _windowStopwatch.Restart();
-
-                foreach (var stage in _stages.Values)
-                    stage.Reset();
-            }
-
-            // Debug.WriteLine(message);
-            // Console.WriteLine(message);
-        }
-
-        private List<string> BuildStageSummary()
-        {
-            var lines = new List<string>();
-
-            foreach (var stageName in _stageOrder.Where(IsRootStage))
-                AppendStageGroup(lines, stageName);
-
-            return lines;
-        }
-
-        private void AppendStageGroup(List<string> lines, string stageName)
-        {
-            if (!_stages.TryGetValue(stageName, out var stage) || stage.CallCount == 0)
-                return;
-
-            lines.Add(FormatStageHeader(GetDisplayName(stageName), stage));
-
-            var childLeaves = new List<string>();
-
-            foreach (var childName in GetDirectChildren(stageName))
-            {
-                if (!_stages.TryGetValue(childName, out var childStage) || childStage.CallCount == 0)
-                    continue;
-
-                var grandChildren = GetDirectChildren(childName)
-                    .Where(grandChildName => _stages.TryGetValue(grandChildName, out var grandChildStage) &&
-                                             grandChildStage.CallCount > 0)
-                    .ToList();
-
-                if (grandChildren.Count == 0)
-                {
-                    childLeaves.Add(FormatInlineStage(GetDisplayName(childName), childStage));
-                    continue;
-                }
-
-                var grandChildSummary = string.Join(" | ", grandChildren.Select(grandChildName =>
-                    FormatInlineStage(GetDisplayName(grandChildName), _stages[grandChildName])));
-                lines.Add($"    {FormatInlineStage(GetDisplayName(childName), childStage)} -> {grandChildSummary}");
-            }
-
-            if (childLeaves.Count > 0)
-                lines.Add($"    {string.Join(" | ", childLeaves)}");
-        }
-
-        private IEnumerable<string> GetDirectChildren(string parentStageName) =>
-            _stageOrder.Where(stageName => GetParentStageName(stageName) == parentStageName);
-
-        private static bool IsRootStage(string stageName) => !stageName.Contains('.');
-
-        private static string? GetParentStageName(string stageName)
-        {
-            int splitIndex = stageName.LastIndexOf('.');
-            return splitIndex >= 0 ? stageName[..splitIndex] : null;
-        }
-
-        private static string GetDisplayName(string stageName)
-        {
-            int splitIndex = stageName.LastIndexOf('.');
-            return splitIndex >= 0 ? stageName[(splitIndex + 1)..] : stageName;
-        }
-
-        private static string FormatStageHeader(string displayName, StageTiming stage)
-        {
-            double averageMs = stage.TotalElapsed.TotalMilliseconds / stage.CallCount;
-            double fps = stage.TotalElapsed.TotalSeconds > 0
-                ? stage.CallCount / stage.TotalElapsed.TotalSeconds
-                : 0;
-
-            return $"  {displayName,-20} {averageMs,8:F2} ms avg  {fps,8:F2} fps";
-        }
-
-        private static string FormatInlineStage(string displayName, StageTiming stage)
-        {
-            double averageMs = stage.TotalElapsed.TotalMilliseconds / stage.CallCount;
-            return $"{displayName} {averageMs:F2} ms";
-        }
-
-        private sealed class StageTiming
-        {
-            public int CallCount { get; set; }
-            public TimeSpan TotalElapsed { get; set; }
-
-            public void Reset()
-            {
-                CallCount = 0;
-                TotalElapsed = TimeSpan.Zero;
-            }
         }
     }
 }

@@ -48,6 +48,11 @@ public readonly struct Vector2Int
         Y = y;
     }
 
+    public LayoutPoint ToLayoutPoint()
+    {
+        return new LayoutPoint(X, Y);
+    }
+
     public static Vector2Int operator -(Vector2Int v) => new Vector2Int(-v.X, -v.Y);
 
     public static Vector2Int operator /(Vector2Int v, int scalar) =>
