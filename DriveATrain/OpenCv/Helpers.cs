@@ -27,7 +27,7 @@ public static class Helpers
         if (masks.Count == 0)
         {
             // Default to 8-bit single channel (typical for masks)
-            return Mat.Zeros(new Size(CaptureService.detectionWidth, CaptureService.detectionHeight), type).ToMat();
+            return Mat.Zeros(new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT), type).ToMat();
         }
 
         var result = Mat.Zeros(masks[0].Size(), masks[0].Type()).ToMat();
@@ -52,7 +52,7 @@ public static class Helpers
         if (maskColorPairs.Count == 0)
         {
             // Default to 4-channel transparent output
-            return Mat.Zeros(new Size(CaptureService.detectionWidth, CaptureService.detectionHeight), MatType.CV_8UC4).ToMat();
+            return Mat.Zeros(new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT), MatType.CV_8UC4).ToMat();
         }
 
         var size = maskColorPairs[0].Mask.Size();

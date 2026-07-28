@@ -37,8 +37,8 @@ class TrainingFrameCapture
             camera = new VideoCapture("/dev/video0", VideoCaptureAPIs.V4L2);
         }
 
-        camera.Set(VideoCaptureProperties.FrameWidth, DetectorService.CAMERA_WIDTH);
-        camera.Set(VideoCaptureProperties.FrameHeight, DetectorService.CAMERA_HEIGHT);
+        camera.Set(VideoCaptureProperties.FrameWidth, CaptureService.CAMERA_WIDTH);
+        camera.Set(VideoCaptureProperties.FrameHeight, CaptureService.CAMERA_HEIGHT);
 
         using var frame = new Mat();
 

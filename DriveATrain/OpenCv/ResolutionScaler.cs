@@ -38,7 +38,7 @@ public static class ResolutionScaler
 
     public static float ScaleValue(float value)
     {
-        return ScaleValue(value, 1920, 1080, CaptureService.detectionWidth, CaptureService.detectionHeight);
+        return ScaleValue(value, 1920, 1080, CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT);
     }
     
     private static float ScaleArea(float value, int originalWidth, int originalHeight, int newWidth, int newHeight)
@@ -53,6 +53,6 @@ public static class ResolutionScaler
 
     public static float ScaleArea(float value)
     {
-        return ScaleArea(value, 1920, 1080, CaptureService.detectionWidth, CaptureService.detectionHeight);
+        return ScaleArea(value, 1920, 1080, CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT);
     }
 }

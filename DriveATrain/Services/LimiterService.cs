@@ -56,7 +56,7 @@ public class LimiterService
 
         var point = pathProjector.Project(front.Position.ToLayoutPoint());
 
-        Cv2.Circle(debugFrame, LayoutDraw.ScalePoint(point.Point).ToPoint(), 10, new Scalar(255, 0, 0, 255));
+        Cv2.Circle(debugFrame, point.Point.ToPoint(), 10, new Scalar(255, 0, 0, 255));
 
         // using var binary = new Mat();
         // Cv2.Threshold(config.blocks, binary, 254.0, 255.0, ThresholdTypes.Binary);

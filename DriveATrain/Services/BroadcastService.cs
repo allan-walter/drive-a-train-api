@@ -218,7 +218,7 @@ public class BroadcastService : IHostedService, IDisposable
             {
                 // _captureService.debugOverlayFrame.SaveImage("debug overlay.png");
                 using var expanded = new Mat();
-                Cv2.Resize(_captureService.debugOverlayFrame, expanded, new Size(CaptureService.width, CaptureService.height));
+                Cv2.Resize(_captureService.debugOverlayFrame, expanded, new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
                 Blend.BlendOverlay(expanded, frame, 1);
             }
 

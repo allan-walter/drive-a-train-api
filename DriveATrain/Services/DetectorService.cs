@@ -21,10 +21,6 @@ public class DetectorService(
 
     private CancellationTokenSource token = new CancellationTokenSource();
 
-    // public static double CAMERA_WIDTH = 640.0;
-    // public static double CAMERA_HEIGHT = 360.0;
-    public static double CAMERA_WIDTH = 1920.0;
-    public static double CAMERA_HEIGHT = 1080.0;
 
     private LiveData? _pendingLiveData;
     private List<Uncouple>? _pendingConnections;
@@ -36,10 +32,10 @@ public class DetectorService(
         var processStopwatch = Stopwatch.StartNew();
         // DebugWindow.Show("test frame", frame.Clone());
         using var processingFrame = new Mat();
-        Cv2.Resize(frame, processingFrame, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
+        Cv2.Resize(frame, processingFrame, new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
 
         // Transparent with debug info on top. This is overlayed over the actual frame at the end
-        using var debugFrame = new Mat(new Size(CaptureService.detectionWidth, CaptureService.detectionHeight),
+        using var debugFrame = new Mat(new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT),
             MatType.CV_8UC4,
             new Scalar(0, 0, 0, 0));
         List<MarkerDef>? markers = null;
@@ -154,7 +150,7 @@ public class DetectorService(
             {
                 Cv2.GaussianBlur(frame, frame, Blur, 0);
 
-                Cv2.Resize(frame, frame, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
+                Cv2.Resize(frame, frame, new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
                 // Cv2.Add(frame, new Scalar(-50, -50, -50), frame);
 
                 _mog2.Apply(frame, fgMask, 0.01);

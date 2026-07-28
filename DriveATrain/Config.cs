@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
+using DriveATrain.OpenCv;
 using DriveATrain.Services;
 using OpenCvSharp;
 
@@ -59,7 +60,7 @@ public class VisionConfig
 
     public VisionConfig()
     {
-        Cv2.Resize(goZone, goZone, new Size(CaptureService.detectionWidth, CaptureService.detectionHeight));
+        Cv2.Resize(goZone, goZone, new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
 
         string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DriveATrain",
             "Static Images/layout.json");
@@ -80,17 +81,24 @@ public class AppConfig
 
 public class Layout
 {
-    public List<List<LayoutPoint>> Paths { get; set; }
-    public List<LayoutBlock> Blocks { get; set; }
+    public List<Node> Nodes { get; set; }
+    public List<Edge> Edges { get; set; }
+    public List<Block> Blocks { get; set; }
 }
 
-public class LayoutBlock
+public class Edge
 {
-    public LayoutPoint Point { get; set; }
+    public Node A { get; set; }
+    public Node B { get; set; }
+}
+
+public class Block
+{
+    public Node Point { get; set; }
     public int Distance { get; set; }
 }
 
-public class LayoutPoint
+public struct Node
 {
     public int X { get; set; }
     public int Y { get; set; }
@@ -100,11 +108,11 @@ public class LayoutPoint
         return new Point(X, Y);
     }
 
-    public LayoutPoint()
+    public Node()
     {
     }
 
-    public LayoutPoint(int x, int y)
+    public Node(int x, int y)
     {
         X = x;
         Y = y;

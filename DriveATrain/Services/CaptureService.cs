@@ -6,14 +6,19 @@ namespace DriveATrain.Services;
 
 public class CaptureService : IHostedService
 {
-    public const int width = 1920;
-    public const int height = 1080;
+    // public const int CAMERA_WIDTH = 640;
+    //
+    // public const int CAMERA_HEIGHT = 480;
+    public const int CAMERA_WIDTH = 1920;
+    public const int CAMERA_HEIGHT = 1080;
+
     public const int fps = 30;
 
-    public const int detectionWidth = width / 4;
-    public const int detectionHeight = height / 4;
-    // public const int detectionWidth = width;
-    // public const int detectionHeight = height;
+    public const int DETECTION_WIDTH = CAMERA_WIDTH / 4;
+
+    public const int DETECTION_HEIGHT = CAMERA_HEIGHT / 4;
+    // public const int detectionWidth = (int)CAMERA_WIDTH;
+    // public const int detectionHeight = (int)CAMERA_HEIGHT;
 
     public const int streamWidth = 1920;
     public const int streamHeight = 1080;
@@ -27,7 +32,9 @@ public class CaptureService : IHostedService
     private Mat latestFrame = new Mat();
     public Mat latestFrameLock = new();
 
-    public Mat debugOverlayFrame = new Mat(new Size(detectionWidth, detectionHeight), MatType.CV_8UC4, new Scalar(0, 0, 0, 0));
+    public Mat debugOverlayFrame =
+        new Mat(new Size(DETECTION_WIDTH, DETECTION_HEIGHT), MatType.CV_8UC4, new Scalar(0, 0, 0, 0));
+
     public object debugOverlayLock = new();
 
     public CaptureService(Config config)
@@ -44,7 +51,7 @@ public class CaptureService : IHostedService
 
     private void Capture(CancellationToken token)
     {
-        int frameSize = width * height * 3;
+        int frameSize = (int)CAMERA_WIDTH * (int)CAMERA_HEIGHT * 3;
 
         ProcessStartInfo psi;
         string flipFilter = config.Flip ? "-vf hflip " : "";
@@ -55,7 +62,7 @@ public class CaptureService : IHostedService
             {
                 FileName = "ffmpeg",
                 Arguments =
-                    $"-f dshow -vcodec mjpeg -video_size {width}x{height} -framerate {fps} -i video=\"Brio 100\" " +
+                    $"-f dshow -vcodec mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {fps} -i video=\"Brio 100\" " +
                     $"-pix_fmt bgr24 {flipFilter}-f rawvideo -an -sn -",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -68,8 +75,9 @@ public class CaptureService : IHostedService
             psi = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                Arguments = $"-f v4l2 -vcodec mjpeg -video_size {width}x{height} -framerate {fps} -i /dev/video0 " +
-                            $"-pix_fmt bgr24 {flipFilter}-f rawvideo -an -sn -",
+                Arguments =
+                    $"-f v4l2 -vcodec mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {fps} -i /dev/video0 " +
+                    $"-pix_fmt bgr24 {flipFilter}-f rawvideo -an -sn -",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -108,7 +116,7 @@ public class CaptureService : IHostedService
                 totalRead += bytesRead;
             }
 
-            using var frame = Mat.FromPixelData(height, width, MatType.CV_8UC3, buffer);
+            using var frame = Mat.FromPixelData((int)CAMERA_HEIGHT, (int)CAMERA_WIDTH, MatType.CV_8UC3, buffer);
             Cv2.Flip(frame, frame, FlipMode.Y);
 
             lock (latestFrameLock)

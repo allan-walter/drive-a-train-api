@@ -10,8 +10,10 @@ public class InfoHub(Config config) : Hub
     {
         object data = new
         {
-            width = DetectorService.CAMERA_WIDTH,
-            height = DetectorService.CAMERA_HEIGHT,
+            width = CaptureService.CAMERA_WIDTH,
+            height = CaptureService.CAMERA_HEIGHT,
+            detectionWidth = CaptureService.DETECTION_WIDTH,
+            detectionHeight = CaptureService.DETECTION_HEIGHT,
             maxThrottle = config.Dcc.MaxSpeed,
             throttleStep = config.Dcc.ThrottleStep,
             turnoutLocations = config.Turnout.Locations
