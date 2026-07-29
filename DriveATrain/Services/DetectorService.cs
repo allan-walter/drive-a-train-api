@@ -34,6 +34,7 @@ public class DetectorService(
         using var processingFrame = new Mat();
         Cv2.Resize(frame, processingFrame, new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
 
+
         // Transparent with debug info on top. This is overlayed over the actual frame at the end
         using var debugFrame = new Mat(new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT),
             MatType.CV_8UC4,
@@ -71,7 +72,7 @@ public class DetectorService(
             var dirMarkers = MeasureStage("direction-markers",
                 () => IdentifyDirectionMarkers(processingFrame, debugFrame, combinedMaskBinary));
             var units = MeasureStage("unit-rects", () => GetRects(processingFrame, debugFrame, markers, dirMarkers));
-            
+
             LayoutDraw.DrawUnits(debugFrame, units);
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
@@ -148,10 +149,16 @@ public class DetectorService(
 
             if (!frame.Empty())
             {
-                Cv2.GaussianBlur(frame, frame, Blur, 0);
-
                 Cv2.Resize(frame, frame, new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
+                
+                Cv2.GaussianBlur(frame, frame, Blur, 0);
                 // Cv2.Add(frame, new Scalar(-50, -50, -50), frame);
+
+
+                // if (i == 20)
+                //     frame.SaveImage(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                //         "DriveATrain",
+                //         "TRAINIG FRAME.png"));
 
                 _mog2.Apply(frame, fgMask, 0.01);
 
@@ -184,7 +191,7 @@ public class DetectorService(
         MeasureStage("marker-seeds.threshold", () => Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary));
 
 
-        // DebugWindow.Show("Step 0", res.Clone());
+        DebugWindow.Show("Step 0", res.Clone());
         // Erosion then dilation, renmove noise
         int openSize = 3; //(int)ResolutionScaler.ScaleKernel(3);
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
@@ -200,7 +207,7 @@ public class DetectorService(
         int open2Size = (int)ResolutionScaler.ScaleKernel(15);
         using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
         MeasureStage("marker-seeds.morph-open-large", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2));
-
+        DebugWindow.Show("after everything", res.Clone());
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
         // A bit of blur so there is more of an average color to find
@@ -293,12 +300,15 @@ public class DetectorService(
 
     private Mat GetDiffMask(Mat liveFrame)
     {
+        // liveFrame.SaveImage(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        //     "DriveATrain",
+        //     "LIVE FRAME.png"));
         using var fgMask = new Mat();
 
         const double liveLearningRate = 0.0;
         _mog2.Apply(liveFrame, fgMask, liveLearningRate);
 
-        // DebugWindow.Show("Raw diff", fgMask.Clone());
+        DebugWindow.Show("Raw diff", fgMask.Clone());
         var cut = new Mat();
         fgMask.CopyTo(cut, config.Vision.goZone);
 
