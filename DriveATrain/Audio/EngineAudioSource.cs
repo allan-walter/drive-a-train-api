@@ -13,10 +13,11 @@ public class EngineAudioSource
         _sourceRate = sourceRate;
     }
 
-    public void SetSpeed(double speed)
+    public void SetSpeed(double speed, double max)
     {
-        var maxRpm = 1d;
-        Pitch = 0.8 + (speed / maxRpm) * 1.4; // tune these two constants by ear 
+        // Max so regardless of whatever the configued max is max sounds the same
+        // These 2 values are just tuned to sound good
+        Pitch = 0.8 + (speed / max) * 0.5; // tune these two constants by ear 
     }
 
     public void Render(short[] outBuffer, int count, int outputRate)

@@ -32,18 +32,18 @@ public class BroadcastService : IHostedService, IDisposable
             StartInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                Arguments =
-                    $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
-                    $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
-                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 // Arguments =
                 //     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
                 //     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
-                //     $"-f s16le -ar 44100 -ac 1 -i \\\\.\\pipe\\engine_audio " +
-                //     $"-map 0:v -map 1:a " +
-                //     $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 " +
-                //     $"-c:a mp2 -b:a 128k -ar 44100 -ac 1 " +
-                //     $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+                //     $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+                Arguments =
+                    $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
+                    $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
+                    $"-f s16le -ar 44100 -ac 1 -i \\\\.\\pipe\\engine_audio " +
+                    $"-map 0:v -map 1:a " +
+                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 " +
+                    $"-c:a mp2 -b:a 128k -ar 44100 -ac 1 " +
+                    $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
@@ -218,7 +218,8 @@ public class BroadcastService : IHostedService, IDisposable
             {
                 // _captureService.debugOverlayFrame.SaveImage("debug overlay.png");
                 using var expanded = new Mat();
-                Cv2.Resize(_captureService.debugOverlayFrame, expanded, new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
+                Cv2.Resize(_captureService.debugOverlayFrame, expanded,
+                    new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
                 Blend.BlendOverlay(expanded, frame, 1);
             }
 

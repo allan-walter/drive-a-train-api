@@ -156,7 +156,7 @@ public class DccService : IHostedService
 
         Debug.WriteLine($"Throttle: {throttleValue}, Reverse: {reverse}");
 
-        _broadcastService.engineAudio.SetSpeed(throttleValue);
+        _broadcastService.engineAudio.SetSpeed(throttleValue, config.MaxSpeed);
 
         SendCommand($"<t {config.LocoAddress} {(int)(throttleValue * 100)} {(reverse ? 0 : 1)}>");
 
