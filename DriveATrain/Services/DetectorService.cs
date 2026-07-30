@@ -30,7 +30,6 @@ public class DetectorService(
     public void Process(Mat frame)
     {
         var processStopwatch = Stopwatch.StartNew();
-        // DebugWindow.Show("test frame", frame.Clone());
         using var processingFrame = new Mat();
         Cv2.Resize(frame, processingFrame, new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
 
@@ -109,7 +108,6 @@ public class DetectorService(
 
             lock (captureService.debugOverlayLock)
             {
-                // DebugWindow.Show("debug overlay", captureService.debugOverlayFrame.Clone());
                 debugFrame.CopyTo(captureService.debugOverlayFrame);
             }
         }
@@ -150,7 +148,7 @@ public class DetectorService(
             if (!frame.Empty())
             {
                 Cv2.Resize(frame, frame, new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
-                
+
                 Cv2.GaussianBlur(frame, frame, Blur, 0);
                 // Cv2.Add(frame, new Scalar(-50, -50, -50), frame);
 
@@ -191,13 +189,11 @@ public class DetectorService(
         MeasureStage("marker-seeds.threshold", () => Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary));
 
 
-        DebugWindow.Show("Step 0", res.Clone());
         // Erosion then dilation, renmove noise
         int openSize = 3; //(int)ResolutionScaler.ScaleKernel(3);
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
         MeasureStage("marker-seeds.morph-open-small", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen));
 
-        // DebugWindow.Show("Step 1", res.Clone());
         // Dilation then eriosion, fill gaps and join blobs
         int closeSize = ResolutionScaler.ScaleKernel(30);
         using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(closeSize, closeSize));
@@ -207,7 +203,6 @@ public class DetectorService(
         int open2Size = (int)ResolutionScaler.ScaleKernel(15);
         using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
         MeasureStage("marker-seeds.morph-open-large", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2));
-        DebugWindow.Show("after everything", res.Clone());
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
         // A bit of blur so there is more of an average color to find
@@ -216,7 +211,6 @@ public class DetectorService(
             () => Cv2.GaussianBlur(frame, blurredFrame, new Size(blurSize, blurSize), 0));
         blurredFrame.CopyTo(cutout, res);
 
-        // DebugWindow.Show("after cleanup", res.Clone());
 
         var colorMasks = MeasureStage("marker-seeds.color-segmentation",
             () => SplitMaskByNearestColorRegion(blurredFrame, res,
@@ -270,7 +264,6 @@ public class DetectorService(
                     // Replace the original mask with the filtered one
                     mask = filteredMask;
 
-                    // DebugWindow.Show("mask " + index, mask);
 
                     keptMasks.Add(mask);
                     markerDefs.Add(new MarkerDef(
@@ -308,11 +301,9 @@ public class DetectorService(
         const double liveLearningRate = 0.0;
         _mog2.Apply(liveFrame, fgMask, liveLearningRate);
 
-        DebugWindow.Show("Raw diff", fgMask.Clone());
         var cut = new Mat();
         fgMask.CopyTo(cut, config.Vision.goZone);
 
-        // DebugWindow.Show("Raw diff", cut.Clone());
 
         return cut;
     }
