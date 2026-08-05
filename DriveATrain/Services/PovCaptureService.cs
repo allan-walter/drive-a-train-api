@@ -31,20 +31,41 @@ public class PovCaptureService : IHostedService
     private void StartFfmpeg(CancellationToken token)
     {
         const string url = "http://192.168.20.100:81/stream";
+
         var psi = new ProcessStartInfo
         {
-            FileName = "ffmpeg",
-            Arguments =
-                $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
-                $"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 " +
-                $"-f mjpeg -i {url} " +
-                $"-c:v mpeg1video -b:v 1000k -pix_fmt yuv420p -bf 0 -g 15 " +
-                $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+            FileName = "ffmpeg", // Ensure ffmpeg is in system PATH or use full path like @"C:\ffmpeg\bin\ffmpeg.exe"
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        string[] args =
+        [
+            "-fflags", "nobuffer",
+            "-probesize", "32k",
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "2",
+            "-f", "mjpeg",
+            "-i", url, // Passed cleanly with zero escaping logic required
+            "-c:v", "mpeg1video",
+            "-b:v", "1000k",
+            "-pix_fmt", "yuv420p",
+            "-bf", "0",
+            "-g", "15",
+            "-f", "mpegts",
+            "-muxdelay", "0",
+            "-muxpreload", "0",
+            "-flush_packets", "1",
+            "-"
+        ];
+
+        foreach (var arg in args)
+        {
+            psi.ArgumentList.Add(arg);
+        }
 
         process = Process.Start(psi);
         if (process == null)
