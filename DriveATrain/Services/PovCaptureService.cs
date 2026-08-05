@@ -1,98 +1,80 @@
 using System.Diagnostics;
 using DriveATrain.OpenCv;
-using OpenCvSharp;
 
 namespace DriveATrain.Services;
 
 public class PovCaptureService : IHostedService
 {
-    // public const int CAMERA_WIDTH = 640;
-    //
-    // public const int CAMERA_HEIGHT = 480;
     public const int CAMERA_WIDTH = 320;
     public const int CAMERA_HEIGHT = 240;
-
     public const int fps = 30;
-
     public const int streamWidth = 320;
     public const int streamHeight = 240;
     public const int streamFps = 30;
 
     public Process? process;
-    private CameraConfig config;
+    private readonly CameraConfig _config;
     private CancellationTokenSource? _cts;
-    private Task? _captureTask;
-
 
     public PovCaptureService(Config config)
     {
-        this.config = config.Camera;
+        _config = config.Camera;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _cts = new CancellationTokenSource();
-        _captureTask = Task.Run(() => Capture(_cts.Token), _cts.Token);
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        StartFfmpeg(_cts.Token);
         return Task.CompletedTask;
     }
 
-    private void Capture(CancellationToken token)
+    private void StartFfmpeg(CancellationToken token)
     {
-        int frameSize = CAMERA_WIDTH * CAMERA_HEIGHT * 3;
-
-        ProcessStartInfo psi;
-
-        string url = "http://192.168.20.100:81/stream";
-        psi = new ProcessStartInfo
+        const string url = "http://192.168.20.100:81/stream";
+        var psi = new ProcessStartInfo
         {
             FileName = "ffmpeg",
             Arguments =
-                $"-f mjpeg " + // Explicit input format
+                $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
                 $"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 " +
-                $"-i {url} " +
-                $"-c:v mpeg1video -b:v 1000k -pix_fmt yuv420p -bf 0 " +
-                $"-f mpegts -",
+                $"-f mjpeg -i {url} " +
+                $"-c:v mpeg1video -b:v 1000k -pix_fmt yuv420p -bf 0 -g 15 " +
+                $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        // psi = new ProcessStartInfo
-        // {
-        //     FileName = "ffmpeg",
-        //     Arguments =
-        //         $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
-        //         $"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 " +
-        //         $"-f mjpeg -i {url} " + // Added -f mjpeg here
-        //         $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
-        //     RedirectStandardOutput = true,
-        //     RedirectStandardError = true,
-        //     UseShellExecute = false,
-        //     CreateNoWindow = true
-        // };
 
         process = Process.Start(psi);
-        if (process == null) return;
+        if (process == null)
+            throw new InvalidOperationException("Failed to start POV ffmpeg process.");
 
-        // Drain stderr continuously so ffmpeg never blocks writing logs.
-        _ = Task.Run(async () =>
+        _ = Task.Run(() => DrainStderrAsync(process, token), token);
+    }
+
+    private static async Task DrainStderrAsync(Process process, CancellationToken token)
+    {
+        try
         {
-            try
-            {
-                using var reader = process.StandardError;
-                while (!reader.EndOfStream)
-                    Debug.WriteLine($"[FFMPEG] {await reader.ReadLineAsync()}");
-            }
-            catch
-            {
-                /* process exiting, ignore */
-            }
-        }, token);
+            using var reader = process.StandardError;
+            while (!token.IsCancellationRequested && !reader.EndOfStream)
+                Debug.WriteLine($"[POV FFMPEG] {await reader.ReadLineAsync(token)}");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            /* process exiting */
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        _cts?.Cancel();
+        if (_cts != null)
+            await _cts.CancelAsync();
+
         if (process != null && !process.HasExited)
         {
             try
@@ -104,8 +86,5 @@ public class PovCaptureService : IHostedService
                 /* already exited */
             }
         }
-
-        if (_captureTask != null)
-            await Task.WhenAny(_captureTask, Task.Delay(2000, cancellationToken));
     }
 }

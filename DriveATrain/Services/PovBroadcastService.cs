@@ -78,15 +78,26 @@ public class PovBroadcastService : IHostedService, IDisposable
 
     private async Task RunPump(CancellationToken token)
     {
-        var broadcastTask = BroadcastLoop(token);
-        await Task.WhenAll(broadcastTask);
-        // await Task.WhenAll(captureTask, broadcastTask);
+        try
+        {
+            await BroadcastLoop(token);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[POV broadcast] pump failed: {ex}");
+        }
     }
-
 
     private async Task BroadcastLoop(CancellationToken token)
     {
-        var stdout = _captureService.process.StandardOutput.BaseStream;
+        while (_captureService.process == null && !token.IsCancellationRequested)
+            await Task.Delay(50, token);
+
+        var process = _captureService.process;
+        if (process == null)
+            return;
+
+        var stdout = process.StandardOutput.BaseStream;
         var buffer = new byte[64 * 1024];
 
         while (!token.IsCancellationRequested)
