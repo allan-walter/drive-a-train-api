@@ -23,15 +23,20 @@ public class LayoutDraw
     {
         foreach (var unit in units)
         {
-            var box = unit.Box;
-            for (int i = 0; i < box.Count; i++)
-            {
-                var p1 = box[i];
-                var p2 = box[(i + 1) % box.Count]; // wraps last point back to first
+            Cv2.Line(frame, unit.Front.ToPoint(), unit.Back.ToPoint(), new Scalar(0, 255, 0, 255), 3);
 
-                Cv2.Line(frame, new Point(p1.X, p1.Y), new Point(p2.X, p2.Y),
-                    new Scalar(0, 255, 0, 255), 3);
-            }
+            Cv2.Circle(frame, unit.Front.ToPoint(), 3, new Scalar(255, 0, 0, 255), -1);
+            Cv2.Circle(frame, unit.Back.ToPoint(), 3, new Scalar(0, 0, 255, 255), -1);
+
+            // var box = unit.Box;
+            // for (int i = 0; i < box.Count; i++)
+            // {
+            //     var p1 = box[i];
+            //     var p2 = box[(i + 1) % box.Count]; // wraps last point back to first
+            //
+            //     // Cv2.Line(frame, new Point(p1.X, p1.Y), new Point(p2.X, p2.Y),
+            //     //     new Scalar(0, 255, 0, 255), 3);
+            // }
         }
     }
 }

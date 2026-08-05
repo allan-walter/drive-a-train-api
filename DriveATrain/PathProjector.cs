@@ -13,9 +13,9 @@ public class PathProjector
 
     private readonly Layout layout;
 
-    public PathProjector(Layout layout)
+    public PathProjector(Config config)
     {
-        this.layout = layout;
+        this.layout = config.Vision.Layout;
     }
 
     public ProjectionResult Project(Node p)

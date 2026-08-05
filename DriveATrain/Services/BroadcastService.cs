@@ -26,24 +26,50 @@ public class BroadcastService : IHostedService, IDisposable
     {
         _captureService = captureService;
         var size = $"{CaptureService.streamWidth}x{CaptureService.streamHeight}";
+        // Determine audio pipe path per-OS, and set it up if needed
+        string audioPipePath;
+
+        if (OperatingSystem.IsWindows())
+        {
+            audioPipePath = @"\\.\pipe\engine_audio";
+            // Windows named pipes are created elsewhere (e.g. NamedPipeServerStream) -
+            // nothing to do here, ffmpeg just connects to it.
+        }
+        else
+        {
+            audioPipePath = "/tmp/engine_audio";
+
+            // Create the FIFO if it doesn't already exist
+            if (!File.Exists(audioPipePath))
+            {
+                var mkfifo = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "mkfifo",
+                    Arguments = audioPipePath,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+                mkfifo.WaitForExit();
+            }
+        }
 
         _ffmpeg = new Process
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                // Arguments =
-                //     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
-                //     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
-                //     $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 Arguments =
                     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
                     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
-                    $"-f s16le -ar 44100 -ac 1 -i \\\\.\\pipe\\engine_audio " +
-                    $"-map 0:v -map 1:a " +
-                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 " +
-                    $"-c:a mp2 -b:a 128k -ar 44100 -ac 1 " +
-                    $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+                // Arguments =
+                //     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
+                //     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
+                //     $"-f s16le -ar 44100 -ac 1 -i {audioPipePath} " +
+                //     $"-map 0:v -map 1:a " +
+                //     $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 " +
+                //     $"-c:a mp2 -b:a 128k -ar 44100 -ac 1 " +
+                //     $"-f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 UseShellExecute = false,

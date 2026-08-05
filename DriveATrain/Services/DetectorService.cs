@@ -13,6 +13,7 @@ public class DetectorService(
     DccService dccService,
     UnitService unitService,
     IHubContext<UnitHub> unitHub,
+    PathProjector pathProjector,
     Config config) : IHostedService, IDisposable
 {
     private BackgroundSubtractorMOG2 _mog2;
@@ -31,8 +32,8 @@ public class DetectorService(
     {
         var processStopwatch = Stopwatch.StartNew();
         using var processingFrame = new Mat();
-        Cv2.Resize(frame, processingFrame, new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
-
+        Cv2.Resize(frame, processingFrame,
+            new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
 
         // Transparent with debug info on top. This is overlayed over the actual frame at the end
         using var debugFrame = new Mat(new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT),
@@ -41,6 +42,7 @@ public class DetectorService(
         List<MarkerDef>? markers = null;
 
         Mat combinedMaskBinary = null;
+        using Mat combinedMaskBinaryFullRes = new Mat();
         try
         {
             markers = MeasureStage("marker-seeds", () => GetMarkerSeeds(processingFrame, debugFrame));
@@ -51,6 +53,12 @@ public class DetectorService(
                     () => Helpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList()));
                 combinedMaskBinary = MeasureStage("overlay.combine-mask-binary",
                     () => Helpers.CombineMasks(markers.Select(m => m.Mask).ToList()));
+
+
+                // TODO gross, but dir marker dection needs a full size mask
+                Cv2.Resize(combinedMaskBinary, combinedMaskBinaryFullRes,
+                    new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
+
                 // using var blocksOverlay = MeasureStage("overlay.blocks-overlay",
                 //     () => Helpers.InverseMaskOverlay(config.Vision.blocks));
                 using var goZoneOverlay = MeasureStage("overlay.gozone-overlay",
@@ -69,8 +77,9 @@ public class DetectorService(
             });
 
             var dirMarkers = MeasureStage("direction-markers",
-                () => IdentifyDirectionMarkers(processingFrame, debugFrame, combinedMaskBinary));
-            var units = MeasureStage("unit-rects", () => GetRects(processingFrame, debugFrame, markers, dirMarkers));
+                () => IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinaryFullRes));
+            var units = MeasureStage("unit-rects",
+                () => CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers));
 
             LayoutDraw.DrawUnits(debugFrame, units);
 
@@ -308,6 +317,7 @@ public class DetectorService(
         return cut;
     }
 
+    // NOTE, this frame is the full size since the white dots are quite small
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, Mat mask)
     {
         using var hsv = new Mat();
@@ -315,7 +325,10 @@ public class DetectorService(
 
         using var debug = new Mat();
         MeasureStage("direction-markers.threshold",
-            () => Cv2.InRange(hsv, new Scalar(0, 0, 120), new Scalar(180, 35, 255), debug));
+            () => Cv2.InRange(hsv, new Scalar(105, 150, 80), new Scalar(125, 255, 255), debug));
+
+        using var frameCut = new Mat();
+        frame.CopyTo(frameCut, mask);
 
         using var cutout = new Mat();
         debug.CopyTo(cutout, mask);
@@ -329,35 +342,55 @@ public class DetectorService(
 
         MeasureStage("direction-markers.rects", () =>
         {
-            foreach (var contour in contours)
+            var points = contours.Select(c => Helpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint())).ToList();
+            foreach (var point in points)
             {
-                var area = Cv2.ContourArea(contour);
-                // Cv2.DrawContours(debugFrame, new[] { contour }, -1, Scalar.Orange, -1);
-
-                var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
-                var rect = Cv2.MinAreaRect(contour2f);
-                var center = rect.Center;
-
-                // if (area > ResolutionScaler.ScaleArea(13) && area < ResolutionScaler.ScaleArea(30))
-                // {
-                // TODO now with low res the area is < 1, but it doesnt seem to be detecting extra stuff so maybe its fine
-                Cv2.Circle(debugFrame, center.ToPoint(), 3, new Scalar(0, 255, 0, 255), -1);
-                markers.Add(center.ToPoint());
-                // }
-                // else
-                // {
-                //     Cv2.Circle(debugFrame, center.ToPoint(), 3, new Scalar(0, 0, 255, 255), -1);
-                // }
-
-                // Cv2.PutText(debugFrame, area.ToString("F0"), center.ToPoint(), HersheyFonts.HersheySimplex, 1, Scalar.Orange, 2);
+                Cv2.Circle(debugFrame, point, 3, new Scalar(0, 255, 0, 255), -1);
             }
+
+            markers.AddRange(points);
+
+            // Not even true at all
+            // // This threshold includes extra noise on the unit boundary, but the markers that matter are closer to the center, and there is no noise around them
+            // // Take the closest one which will ignore the extra outside noise
+            // foreach (var unitLocation in unitLocations)
+            // {
+            //     var closetPoint = points.OrderBy(p => p.DistanceTo(unitLocation.Center)).FirstOrDefault();
+            //
+            //     if (closetPoint != null)
+            //     {
+            //         Cv2.Circle(debugFrame, closetPoint, 3, new Scalar(0, 255, 0, 255), -1);
+            //         markers.Add(closetPoint);
+            //     }
+            // }
+
+            // foreach (var contour in contours)
+            // {
+            //     var area = Cv2.ContourArea(contour);
+            //
+            //     var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
+            //     var rect = Cv2.MinAreaRect(contour2f);
+            //     var center = rect.Center;
+            //
+            //     // Extra removed with morph
+            //     // if (area > 5)
+            //     // {
+            //     var scaled = Helpers.ScalePoint(center.ToPoint());
+            //
+            //     Cv2.Circle(debugFrame, scaled, 3, new Scalar(0, 255, 0, 255), -1);
+            //
+            //     markers.Add(scaled);
+            //     // }
+            // }
         });
 
 
         return markers;
     }
 
-    public List<UnitMarkerResponse> GetRects(Mat frame, Mat debugFrame, List<MarkerDef> markers, List<Point> dirMarkers)
+    // Take the camera position and map that onto the layout path
+    public List<UnitMarkerResponse> CalculateLayoutPosition(Mat frame, Mat debugFrame, List<MarkerDef> markers,
+        List<Point> dirMarkers)
     {
         var res = new List<UnitMarkerResponse>();
 
@@ -415,7 +448,11 @@ public class DetectorService(
 
                 // Cv2.Circle(frame, new Point(best.front.Position.X, best.front.Position.Y), 20, Colors.GREEN);
 
-                res.Add(new UnitMarkerResponse(box.ToList(), best.front, best.back, marker));
+                // res.Add(new UnitMarkerResponse(best.front, best.back, marker));
+                var frontProjection = pathProjector.Project(best.front.Position.ToLayoutPoint());
+                var backProjection = pathProjector.Project(best.back.Position.ToLayoutPoint());
+                res.Add(new UnitMarkerResponse(frontProjection.Point.ToVector2Int(),
+                    backProjection.Point.ToVector2Int(), marker));
             }
         }
 
@@ -528,49 +565,49 @@ public class DetectorService(
     public List<Uncouple> GetConnections(List<RailUnitGet> railUnits)
     {
         var connections = new List<Uncouple>();
-        const int maxDist = 100;
-
-        // Flatten every unit's two couplers into one list of (unit, index, position).
-        var couplers = railUnits
-            .SelectMany(u => new[]
-            {
-                new { Unit = u, Index = u.Def.FrontCouplerIndex, Position = u.Front.Position },
-                new { Unit = u, Index = u.Def.BackCouplerIndex, Position = u.Back.Position }
-            })
-            .ToList();
-
-        foreach (var coupler in couplers)
-        {
-            double bestDist = double.MaxValue;
-            RailUnitGet? bestUnit = null;
-            int bestIndex = -1;
-            object? bestPos = null;
-
-            foreach (var other in couplers)
-            {
-                if (other.Unit == coupler.Unit) continue; // skip same unit's own couplers
-
-                double dist = other.Position.DistanceTo(coupler.Position);
-                if (dist <= maxDist && dist < bestDist)
-                {
-                    bestDist = dist;
-                    bestUnit = other.Unit;
-                    bestIndex = other.Index;
-                    bestPos = other.Position;
-                }
-            }
-
-            if (bestUnit != null && !connections.Any(c =>
-                    c.Address == coupler.Unit.Def.Address || c.Address == bestUnit.Def.Address))
-            {
-                connections.Add(new Uncouple
-                {
-                    Address = coupler.Unit.Def.Address,
-                    Coupler = coupler.Index,
-                    Position = GetMidpoint(coupler.Position, (dynamic)bestPos!)
-                });
-            }
-        }
+        // const int maxDist = 100;
+        //
+        // // Flatten every unit's two couplers into one list of (unit, index, position).
+        // var couplers = railUnits
+        //     .SelectMany(u => new[]
+        //     {
+        //         new { Unit = u, Index = u.Def.FrontCouplerIndex, Position = u.Front.Position },
+        //         new { Unit = u, Index = u.Def.BackCouplerIndex, Position = u.Back.Position }
+        //     })
+        //     .ToList();
+        //
+        // foreach (var coupler in couplers)
+        // {
+        //     double bestDist = double.MaxValue;
+        //     RailUnitGet? bestUnit = null;
+        //     int bestIndex = -1;
+        //     object? bestPos = null;
+        //
+        //     foreach (var other in couplers)
+        //     {
+        //         if (other.Unit == coupler.Unit) continue; // skip same unit's own couplers
+        //
+        //         double dist = other.Position.DistanceTo(coupler.Position);
+        //         if (dist <= maxDist && dist < bestDist)
+        //         {
+        //             bestDist = dist;
+        //             bestUnit = other.Unit;
+        //             bestIndex = other.Index;
+        //             bestPos = other.Position;
+        //         }
+        //     }
+        //
+        //     if (bestUnit != null && !connections.Any(c =>
+        //             c.Address == coupler.Unit.Def.Address || c.Address == bestUnit.Def.Address))
+        //     {
+        //         connections.Add(new Uncouple
+        //         {
+        //             Address = coupler.Unit.Def.Address,
+        //             Coupler = coupler.Index,
+        //             Position = GetMidpoint(coupler.Position, (dynamic)bestPos!)
+        //         });
+        //     }
+        // }
 
         return connections;
     }

@@ -6,57 +6,22 @@ using OpenCvSharp;
 public class LimiterService
 {
     private VisionConfig config;
-    private PathProjector pathProjector;
 
     public LimiterService(Config config)
     {
         this.config = config.Vision;
-        pathProjector = new PathProjector(config.Vision.Layout);
     }
 
-    public Vector2Int GetNearestBlack(Transform to, Mat mask)
-    {
-        using var invertedBinary = new Mat();
-        Cv2.BitwiseNot(mask, invertedBinary);
-
-        using var blackPixels = new Mat();
-        Cv2.FindNonZero(invertedBinary, blackPixels);
-
-        // Find the closest one to the dot
-        double minDist = double.MaxValue;
-        int nearestX = -1;
-        int nearestY = -1;
-
-        for (int i = 0; i < blackPixels.Rows; i++)
-        {
-            var pt = blackPixels.At<Point>(i, 0);
-            double px = pt.X;
-            double py = pt.Y;
-            double dx = px - to.Position.X;
-            double dy = py - to.Position.Y;
-            double dist = Math.Sqrt(dx * dx + dy * dy);
-
-            if (dist < minDist)
-            {
-                minDist = dist;
-                nearestX = (int)px;
-                nearestY = (int)py;
-            }
-        }
-
-        return new Vector2Int(nearestX, nearestY);
-    }
-
-    public SpeedResult ProcessLimits(Mat frame, Transform front, Transform back, Mat debugFrame)
+    public SpeedResult ProcessLimits(Mat frame, Vector2Int front, Vector2Int back, Mat debugFrame)
     {
         var limits = new SpeedResult();
 
         limits.Forward = SpeedLimit.STOP;
         limits.Reverse = SpeedLimit.STOP;
 
-        var point = pathProjector.Project(front.Position.ToLayoutPoint());
-
-        Cv2.Circle(debugFrame, point.Point.ToPoint(), 10, new Scalar(255, 0, 0, 255));
+        // var point = pathProjector.Project(front.Position.ToLayoutPoint());
+        //
+        // Cv2.Circle(debugFrame, point.Point.ToPoint(), 10, new Scalar(255, 0, 0, 255));
 
         // using var binary = new Mat();
         // Cv2.Threshold(config.blocks, binary, 254.0, 255.0, ThresholdTypes.Binary);

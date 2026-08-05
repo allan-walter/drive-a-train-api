@@ -73,7 +73,7 @@ public class MarkerDef
 
     // Convex, clean but might include slightly too much
     public Mat Mask { get; set; }
-    
+
     // Should really only be one
     public Point[] Contour { get; set; }
 
@@ -91,14 +91,12 @@ public class MarkerDef
 // The class containing a lot of info about the detected results
 public class UnitMarkerResponse
 {
-    public List<Vector2Int> Box { get; set; }
-    public Transform Front { get; set; }
-    public Transform Back { get; set; }
+    public Vector2Int Front { get; set; }
+    public Vector2Int Back { get; set; }
     public MarkerDef Marker { get; set; }
 
-    public UnitMarkerResponse(List<Vector2Int> box, Transform front, Transform back, MarkerDef marker)
+    public UnitMarkerResponse(Vector2Int front, Vector2Int back, MarkerDef marker)
     {
-        Box = box;
         Front = front;
         Back = back;
         Marker = marker;
@@ -113,7 +111,7 @@ public class LiveData
     public double ForwardValue { get; set; }
     public SpeedLimit Reverse { get; set; }
     public double ReverseValue { get; set; }
-    
+
     public bool PowerOn { get; set; }
 }
 
@@ -121,31 +119,31 @@ public class LiveData
 public class RailUnitGet
 {
     public UnitDefinition Def { get; set; }
-    public Vector2Int A { get; set; }
-    public Vector2Int B { get; set; }
-    public Vector2Int C { get; set; }
-    public Vector2Int D { get; set; }
-    public Transform Front { get; set; }
-    public Transform Back { get; set; }
 
-    public RailUnitGet(UnitDefinition def, Vector2Int a, Vector2Int b, Vector2Int c, Vector2Int d, Transform front,
-        Transform back)
+    // public Vector2Int A { get; set; }
+    // public Vector2Int B { get; set; }
+    // public Vector2Int C { get; set; }
+    // public Vector2Int D { get; set; }
+    public Vector2Int Front { get; set; }
+    public Vector2Int Back { get; set; }
+
+    public RailUnitGet(UnitDefinition def, Vector2Int front, Vector2Int back)
     {
         Def = def;
-        A = a;
-        B = b;
-        C = c;
-        D = d;
+        // A = a;
+        // B = b;
+        // C = c;
+        // D = d;
         Front = front;
         Back = back;
     }
 
     public RailUnitGet(UnitMarkerResponse model) : this(
         model.Marker.Unit,
-        model.Box[0],
-        model.Box[1],
-        model.Box[2],
-        model.Box[3],
+        // model.Box[0],
+        // model.Box[1],
+        // model.Box[2],
+        // model.Box[3],
         model.Front,
         model.Back)
     {
@@ -165,26 +163,26 @@ public static class RailUnitMocks
         const int separationOffset = 400;
         int offsetB = isFarPhase ? separationOffset : 0;
 
-        var mockA = new RailUnitGet(
-            loco,
-            new Vector2Int(100, 100), // A
-            new Vector2Int(300, 100), // B
-            new Vector2Int(300, 300), // C
-            new Vector2Int(100, 300), // D
-            front: new Transform(new Vector2Int(300, 200), new Vector2Double(0, 0)), // midpoint of B-C (right side)
-            back: new Transform(new Vector2Int(100, 200), new Vector2Double(0, 0)) // midpoint of A-D (left side)
-        );
-        var mockB = new RailUnitGet(
-            unit,
-            new Vector2Int(350 + offsetB, 100), // A
-            new Vector2Int(750 + offsetB, 100), // B
-            new Vector2Int(750 + offsetB, 400), // C
-            new Vector2Int(350 + offsetB, 400), // D
-            front: new Transform(new Vector2Int(750 + offsetB, 250),
-                new Vector2Double(0, 0)), // midpoint of B-C (right side)
-            back: new Transform(new Vector2Int(350 + offsetB, 250),
-                new Vector2Double(0, 0)) // midpoint of A-D (left side)
-        );
-        return new List<RailUnitGet> { mockA, mockB };
+        // var mockA = new RailUnitGet(
+        //     loco,
+        //     new Vector2Int(100, 100), // A
+        //     new Vector2Int(300, 100), // B
+        //     new Vector2Int(300, 300), // C
+        //     new Vector2Int(100, 300), // D
+        //     front: new Transform(new Vector2Int(300, 200), new Vector2Double(0, 0)), // midpoint of B-C (right side)
+        //     back: new Transform(new Vector2Int(100, 200), new Vector2Double(0, 0)) // midpoint of A-D (left side)
+        // );
+        // var mockB = new RailUnitGet(
+        //     unit,
+        //     new Vector2Int(350 + offsetB, 100), // A
+        //     new Vector2Int(750 + offsetB, 100), // B
+        //     new Vector2Int(750 + offsetB, 400), // C
+        //     new Vector2Int(350 + offsetB, 400), // D
+        //     front: new Transform(new Vector2Int(750 + offsetB, 250),
+        //         new Vector2Double(0, 0)), // midpoint of B-C (right side)
+        //     back: new Transform(new Vector2Int(350 + offsetB, 250),
+        //         new Vector2Double(0, 0)) // midpoint of A-D (left side)
+        // );
+        return new List<RailUnitGet> {};
     }
 }

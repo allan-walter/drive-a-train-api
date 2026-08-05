@@ -108,6 +108,11 @@ public struct Node
         return new Point(X, Y);
     }
 
+    public Vector2Int ToVector2Int()
+    {
+        return new Vector2Int(X, Y);
+    }
+
     public Node()
     {
     }

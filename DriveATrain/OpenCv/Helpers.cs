@@ -72,6 +72,14 @@ public static class Helpers
 
         return result;
     }
+    
+    public static Point ScalePoint(Point point)
+    {
+        float scaleX = (float)CaptureService.DETECTION_WIDTH / CaptureService.CAMERA_WIDTH;
+        float scaleY = (float)CaptureService.DETECTION_HEIGHT / CaptureService.CAMERA_HEIGHT;
+
+        return new Point((int)(point.X * scaleX), (int)(point.Y * scaleY));
+    }
 
     private static Mat InvertBinary(Mat src)
     {

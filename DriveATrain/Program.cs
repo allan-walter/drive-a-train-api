@@ -22,6 +22,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddSingleton<PathProjector>();
 builder.Services.AddSingleton<DccService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DccService>());
 builder.Services.AddSingleton<DetectorService>();
