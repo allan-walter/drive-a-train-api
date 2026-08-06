@@ -31,12 +31,10 @@ builder.Services.AddSingleton<LimiterService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<UnitService>());
 builder.Services.AddSingleton<UnitService>();
 builder.Services.AddSingleton<TurnoutService>();
+builder.Services.AddSingleton<PovVideoService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PovVideoService>());
 builder.Services.AddSingleton<CaptureService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CaptureService>());
-builder.Services.AddSingleton<PovCaptureService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<PovCaptureService>());
-builder.Services.AddSingleton<PovBroadcastService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<PovBroadcastService>());
 builder.Services.AddSingleton<BroadcastService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BroadcastService>());
 
@@ -145,7 +143,7 @@ app.Map("/ws/video/pov", async context =>
     }
 
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    var streamer = app.Services.GetRequiredService<PovBroadcastService>();
+    var streamer = app.Services.GetRequiredService<PovVideoService>();
     await streamer.RegisterClientAsync(socket, context.RequestAborted);
 });
 

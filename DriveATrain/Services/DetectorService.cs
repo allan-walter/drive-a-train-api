@@ -26,7 +26,6 @@ public class DetectorService(
     private LiveData? _pendingLiveData;
     private List<Uncouple>? _pendingConnections;
     private int _publishScheduled;
-    private readonly DetectionTimingWindow _detectionTiming = new();
 
     public void Process(Mat frame)
     {
@@ -45,41 +44,32 @@ public class DetectorService(
         using Mat combinedMaskBinaryFullRes = new Mat();
         try
         {
-            markers = MeasureStage("marker-seeds", () => GetMarkerSeeds(processingFrame, debugFrame));
+            markers = GetMarkerSeeds(processingFrame, debugFrame);
 
-            MeasureStage("overlay", () =>
-            {
-                using var combinedMaskColor = MeasureStage("overlay.combine-mask-color",
-                    () => Helpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList()));
-                combinedMaskBinary = MeasureStage("overlay.combine-mask-binary",
-                    () => Helpers.CombineMasks(markers.Select(m => m.Mask).ToList()));
+            using var combinedMaskColor = Helpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList());
 
+            combinedMaskBinary = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
 
-                // TODO gross, but dir marker dection needs a full size mask
-                Cv2.Resize(combinedMaskBinary, combinedMaskBinaryFullRes,
-                    new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
+            // TODO gross, but dir marker dection needs a full size mask
+            Cv2.Resize(combinedMaskBinary, combinedMaskBinaryFullRes,
+                new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
 
-                // using var blocksOverlay = MeasureStage("overlay.blocks-overlay",
-                //     () => Helpers.InverseMaskOverlay(config.Vision.blocks));
-                using var goZoneOverlay = MeasureStage("overlay.gozone-overlay",
-                    () => Helpers.InverseMaskOverlay(config.Vision.goZone));
+            // using var blocksOverlay = MeasureStage("overlay.blocks-overlay",
+            //     () => Helpers.InverseMaskOverlay(config.Vision.blocks));
+            using var goZoneOverlay = Helpers.InverseMaskOverlay(config.Vision.goZone);
 
-                MeasureStage("overlay.blend", () =>
-                {
-                    Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
-                    Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
+            Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
+            Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
 
-                    if (layoutOverlayPrepared != null)
-                        Blend.BlendPrepared(layoutOverlayPrepared, debugFrame);
-                    if (_goZoneOverlayPrepared != null)
-                        Blend.BlendPrepared(_goZoneOverlayPrepared, debugFrame);
-                });
-            });
+            if (layoutOverlayPrepared != null)
+                Blend.BlendPrepared(layoutOverlayPrepared, debugFrame);
+            if (_goZoneOverlayPrepared != null)
+                Blend.BlendPrepared(_goZoneOverlayPrepared, debugFrame);
 
-            var dirMarkers = MeasureStage("direction-markers",
-                () => IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinaryFullRes));
-            var units = MeasureStage("unit-rects",
-                () => CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers));
+            // TODO expensive, probably because its full res, but needs to be since the markers show up quite small
+            // var dirMarkers = IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinaryFullRes);
+            var dirMarkers = new List<Point>();
+            var units = CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers);
 
             LayoutDraw.DrawUnits(debugFrame, units);
 
@@ -87,8 +77,7 @@ public class DetectorService(
 
             if (train != null)
             {
-                var limits = MeasureStage("speed-limits",
-                    () => limiterService.ProcessLimits(processingFrame, train.Front, train.Back, debugFrame));
+                var limits = limiterService.ProcessLimits(processingFrame, train.Front, train.Back, debugFrame);
                 dccService.SetLimits(limits.Forward, limits.Reverse);
             }
             else
@@ -129,8 +118,6 @@ public class DetectorService(
             }
 
             combinedMaskBinary?.Dispose();
-
-            _detectionTiming.RecordFrame(processStopwatch.Elapsed);
         }
     }
 
@@ -187,106 +174,101 @@ public class DetectorService(
         // Cv2.CvtColor(goZone, goZoneColor, ColorConversionCodes.GRAY2BGRA);
         // Cv2.AddWeighted(goZoneColor, goZoneAlpha, debugFrame, 1 - goZoneAlpha, 1, debugFrame);
 
-        MeasureStage("marker-seeds.blur", () => Cv2.GaussianBlur(frame, frame, Blur, 0));
+        Cv2.GaussianBlur(frame, frame, Blur, 0);
 
-        using var res = MeasureStage("marker-seeds.diff-mask", () => GetDiffMask(frame));
+        using var res = GetDiffMask(frame);
 
         // using var color = new Mat();
         // Cv2.CvtColor(res, color, ColorConversionCodes.BGR2BGRA);
         // Blend.BlendOverlay(color, debugFrame, 0.75);
 
-        MeasureStage("marker-seeds.threshold", () => Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary));
+        Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
 
 
         // Erosion then dilation, renmove noise
         int openSize = 3; //(int)ResolutionScaler.ScaleKernel(3);
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
-        MeasureStage("marker-seeds.morph-open-small", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen));
+        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
 
         // Dilation then eriosion, fill gaps and join blobs
         int closeSize = ResolutionScaler.ScaleKernel(30);
         using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(closeSize, closeSize));
-        MeasureStage("marker-seeds.morph-close", () => Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose));
+        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
 
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
         int open2Size = (int)ResolutionScaler.ScaleKernel(15);
         using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
-        MeasureStage("marker-seeds.morph-open-large", () => Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2));
+        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2);
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
         // A bit of blur so there is more of an average color to find
         int blurSize = (int)ResolutionScaler.ScaleKernel(21);
-        MeasureStage("marker-seeds.color-blur",
-            () => Cv2.GaussianBlur(frame, blurredFrame, new Size(blurSize, blurSize), 0));
+        Cv2.GaussianBlur(frame, blurredFrame, new Size(blurSize, blurSize), 0);
         blurredFrame.CopyTo(cutout, res);
 
 
-        var colorMasks = MeasureStage("marker-seeds.color-segmentation",
-            () => SplitMaskByNearestColorRegion(blurredFrame, res,
-                LookupColor.Colors.Select(c => c.SingleColor).ToList()));
+        var colorMasks =
+            SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
 
         var markerDefs = new List<MarkerDef>();
         var keptMasks = new HashSet<Mat>();
 
         try
         {
-            MeasureStage("marker-seeds.contour-filtering", () =>
+            for (int index = 0; index < colorMasks.Count; index++)
             {
-                for (int index = 0; index < colorMasks.Count; index++)
+                var mask = colorMasks[index];
+
+                var center = GetCenterOfShape(mask);
+                var color = LookupColor.Colors[index];
+
+                // No shape for this color this frame; skip before allocating filteredMask.
+                // The original colorMasks[index] is disposed in the finally block below.
+                if (center == null)
+                    continue;
+
+                Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
+                    RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+
+                // Start with a blank mask, same size/type as original
+                Mat filteredMask = Mat.Zeros(mask.Size(), mask.Type());
+                Point[] contourMatch = [];
+
+                foreach (var contour in contours)
                 {
-                    var mask = colorMasks[index];
-
-                    var center = GetCenterOfShape(mask);
-                    var color = LookupColor.Colors[index];
-
-                    // No shape for this color this frame; skip before allocating filteredMask.
-                    // The original colorMasks[index] is disposed in the finally block below.
-                    if (center == null)
+                    // TODO gross but works for now to filter out extra detected stuff. In future when background is not yellow should be easier to only detect one color
+                    double area = Cv2.ContourArea(contour);
+                    if (area <= ResolutionScaler.ScaleArea(3000))
                         continue;
 
-                    Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
-                        RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+                    contourMatch = contour;
 
-                    // Start with a blank mask, same size/type as original
-                    Mat filteredMask = Mat.Zeros(mask.Size(), mask.Type());
-                    Point[] contourMatch = [];
+                    // Draw this contour onto the filtered mask (filled white)
+                    Cv2.FillPoly(filteredMask, new[] { contour }, Scalar.All(255));
 
-                    foreach (var contour in contours)
-                    {
-                        // TODO gross but works for now to filter out extra detected stuff. In future when background is not yellow should be easier to only detect one color
-                        double area = Cv2.ContourArea(contour);
-                        if (area <= ResolutionScaler.ScaleArea(3000))
-                            continue;
-
-                        contourMatch = contour;
-
-                        // Draw this contour onto the filtered mask (filled white)
-                        Cv2.FillPoly(filteredMask, new[] { contour }, Scalar.All(255));
-
-                        // // Overlay drawing (unchanged from before)
-                        // contourOverlay.SetTo(Scalar.All(0));
-                        // Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
-                        // double alpha = 0.5;
-                        // Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
-                    }
-
-                    // Replace the original mask with the filtered one
-                    mask = filteredMask;
-
-
-                    keptMasks.Add(mask);
-                    markerDefs.Add(new MarkerDef(
-                        -1,
-                        color,
-                        index == 0
-                            ? config.Units.ElementAtOrDefault(0)
-                            : config.Units.ElementAtOrDefault(1),
-                        center.Value.ToPoint(),
-                        mask,
-                        contourMatch
-                    ));
+                    // // Overlay drawing (unchanged from before)
+                    // contourOverlay.SetTo(Scalar.All(0));
+                    // Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
+                    // double alpha = 0.5;
+                    // Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
                 }
-            });
+
+                // Replace the original mask with the filtered one
+                mask = filteredMask;
+
+
+                keptMasks.Add(mask);
+                markerDefs.Add(new MarkerDef(
+                    -1,
+                    color,
+                    index == 0
+                        ? config.Units.ElementAtOrDefault(0)
+                        : config.Units.ElementAtOrDefault(1),
+                    center.Value.ToPoint(),
+                    mask,
+                    contourMatch
+                ));
+            }
         }
         finally
         {
@@ -321,11 +303,10 @@ public class DetectorService(
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, Mat mask)
     {
         using var hsv = new Mat();
-        MeasureStage("direction-markers.hsv", () => Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV));
+        Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
 
         using var debug = new Mat();
-        MeasureStage("direction-markers.threshold",
-            () => Cv2.InRange(hsv, new Scalar(105, 150, 80), new Scalar(125, 255, 255), debug));
+        Cv2.InRange(hsv, new Scalar(105, 150, 80), new Scalar(125, 255, 255), debug);
 
         using var frameCut = new Mat();
         frame.CopyTo(frameCut, mask);
@@ -335,54 +316,51 @@ public class DetectorService(
 
         Point[][] contours = [];
         HierarchyIndex[] hierarchy = [];
-        MeasureStage("direction-markers.contours", () => Cv2.FindContours(cutout, out contours, out hierarchy,
-            RetrievalModes.External, ContourApproximationModes.ApproxSimple));
+        Cv2.FindContours(cutout, out contours, out hierarchy, RetrievalModes.External,
+            ContourApproximationModes.ApproxSimple);
 
         var markers = new List<Point>();
 
-        MeasureStage("direction-markers.rects", () =>
+        var points = contours.Select(c => Helpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint())).ToList();
+        foreach (var point in points)
         {
-            var points = contours.Select(c => Helpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint())).ToList();
-            foreach (var point in points)
-            {
-                Cv2.Circle(debugFrame, point, 3, new Scalar(0, 255, 0, 255), -1);
-            }
+            Cv2.Circle(debugFrame, point, 3, new Scalar(0, 255, 0, 255), -1);
+        }
 
-            markers.AddRange(points);
+        markers.AddRange(points);
 
-            // Not even true at all
-            // // This threshold includes extra noise on the unit boundary, but the markers that matter are closer to the center, and there is no noise around them
-            // // Take the closest one which will ignore the extra outside noise
-            // foreach (var unitLocation in unitLocations)
-            // {
-            //     var closetPoint = points.OrderBy(p => p.DistanceTo(unitLocation.Center)).FirstOrDefault();
-            //
-            //     if (closetPoint != null)
-            //     {
-            //         Cv2.Circle(debugFrame, closetPoint, 3, new Scalar(0, 255, 0, 255), -1);
-            //         markers.Add(closetPoint);
-            //     }
-            // }
+        // Not even true at all
+        // // This threshold includes extra noise on the unit boundary, but the markers that matter are closer to the center, and there is no noise around them
+        // // Take the closest one which will ignore the extra outside noise
+        // foreach (var unitLocation in unitLocations)
+        // {
+        //     var closetPoint = points.OrderBy(p => p.DistanceTo(unitLocation.Center)).FirstOrDefault();
+        //
+        //     if (closetPoint != null)
+        //     {
+        //         Cv2.Circle(debugFrame, closetPoint, 3, new Scalar(0, 255, 0, 255), -1);
+        //         markers.Add(closetPoint);
+        //     }
+        // }
 
-            // foreach (var contour in contours)
-            // {
-            //     var area = Cv2.ContourArea(contour);
-            //
-            //     var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
-            //     var rect = Cv2.MinAreaRect(contour2f);
-            //     var center = rect.Center;
-            //
-            //     // Extra removed with morph
-            //     // if (area > 5)
-            //     // {
-            //     var scaled = Helpers.ScalePoint(center.ToPoint());
-            //
-            //     Cv2.Circle(debugFrame, scaled, 3, new Scalar(0, 255, 0, 255), -1);
-            //
-            //     markers.Add(scaled);
-            //     // }
-            // }
-        });
+        // foreach (var contour in contours)
+        // {
+        //     var area = Cv2.ContourArea(contour);
+        //
+        //     var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
+        //     var rect = Cv2.MinAreaRect(contour2f);
+        //     var center = rect.Center;
+        //
+        //     // Extra removed with morph
+        //     // if (area > 5)
+        //     // {
+        //     var scaled = Helpers.ScalePoint(center.ToPoint());
+        //
+        //     Cv2.Circle(debugFrame, scaled, 3, new Scalar(0, 255, 0, 255), -1);
+        //
+        //     markers.Add(scaled);
+        //     // }
+        // }
 
 
         return markers;
@@ -466,71 +444,61 @@ public class DetectorService(
         var colorMasks = new Mat[n];
         var distMaps = new Mat[n];
 
-        // Step 1: per-color range masks, restricted to the original mask
-        MeasureStage("marker-seeds.color-segmentation.range-masks", () =>
+        for (int i = 0; i < n; i++)
         {
-            for (int i = 0; i < n; i++)
-            {
-                var color = targetColors[i];
-                var lower = new Scalar(
-                    Math.Max(0, color.Val0 - tolerance),
-                    Math.Max(0, color.Val1 - tolerance),
-                    Math.Max(0, color.Val2 - tolerance));
-                var upper = new Scalar(
-                    Math.Min(255, color.Val0 + tolerance),
-                    Math.Min(255, color.Val1 + tolerance),
-                    Math.Min(255, color.Val2 + tolerance));
+            var color = targetColors[i];
+            var lower = new Scalar(
+                Math.Max(0, color.Val0 - tolerance),
+                Math.Max(0, color.Val1 - tolerance),
+                Math.Max(0, color.Val2 - tolerance));
+            var upper = new Scalar(
+                Math.Min(255, color.Val0 + tolerance),
+                Math.Min(255, color.Val1 + tolerance),
+                Math.Min(255, color.Val2 + tolerance));
 
-                using var rangeMask = new Mat();
-                Cv2.InRange(frame, lower, upper, rangeMask);
+            using var rangeMask = new Mat();
+            Cv2.InRange(frame, lower, upper, rangeMask);
 
-                colorMasks[i] = new Mat();
-                Cv2.BitwiseAnd(rangeMask, mask, colorMasks[i]);
-            }
-        });
+            colorMasks[i] = new Mat();
+            Cv2.BitwiseAnd(rangeMask, mask, colorMasks[i]);
+        }
 
         // Step 2: distance transform per color
-        MeasureStage("marker-seeds.color-segmentation.distance-transform", () =>
+        using var inv = new Mat(); // reused across iterations, not reallocated per-i
+        for (int i = 0; i < n; i++)
         {
-            using var inv = new Mat(); // reused across iterations, not reallocated per-i
-            for (int i = 0; i < n; i++)
-            {
-                Cv2.BitwiseNot(colorMasks[i], inv);
-                distMaps[i] = new Mat();
-                Cv2.DistanceTransform(inv, distMaps[i], DistanceTypes.L2, DistanceTransformMasks.Mask3);
-            }
-        });
+            Cv2.BitwiseNot(colorMasks[i], inv);
+            distMaps[i] = new Mat();
+            Cv2.DistanceTransform(inv, distMaps[i], DistanceTypes.L2, DistanceTransformMasks.Mask3);
+        }
 
         // Step 3: assign every pixel in the original mask to its nearest color region
         var results = Enumerable.Range(0, n)
             .Select(_ => Mat.Zeros(mask.Size(), MatType.CV_8UC1).ToMat())
             .ToList();
 
-        MeasureStage("marker-seeds.color-segmentation.pixel-assignment", () =>
+        // Running best-distance and best-index maps, same size as mask
+        using var bestDist = new Mat(mask.Size(), MatType.CV_32FC1, new Scalar(float.MaxValue));
+        using var bestIdx = new Mat(mask.Size(), MatType.CV_32SC1, new Scalar(-1));
+
+        for (int i = 0; i < n; i++)
         {
-            // Running best-distance and best-index maps, same size as mask
-            using var bestDist = new Mat(mask.Size(), MatType.CV_32FC1, new Scalar(float.MaxValue));
-            using var bestIdx = new Mat(mask.Size(), MatType.CV_32SC1, new Scalar(-1));
+            // where this map beats the current best
+            using var better = new Mat();
+            Cv2.Compare(distMaps[i], bestDist, better, CmpTypes.LT);
 
-            for (int i = 0; i < n; i++)
-            {
-                // where this map beats the current best
-                using var better = new Mat();
-                Cv2.Compare(distMaps[i], bestDist, better, CmpTypes.LT);
+            distMaps[i].CopyTo(bestDist, better);
 
-                distMaps[i].CopyTo(bestDist, better);
+            using var idxMat = new Mat(mask.Size(), MatType.CV_32SC1, new Scalar(i));
+            idxMat.CopyTo(bestIdx, better);
+        }
 
-                using var idxMat = new Mat(mask.Size(), MatType.CV_32SC1, new Scalar(i));
-                idxMat.CopyTo(bestIdx, better);
-            }
-
-            for (int i = 0; i < n; i++)
-            {
-                using var isIndex = new Mat();
-                Cv2.Compare(bestIdx, new Scalar(i), isIndex, CmpTypes.EQ);
-                Cv2.BitwiseAnd(isIndex, mask, results[i]);
-            }
-        });
+        for (int i = 0; i < n; i++)
+        {
+            using var isIndex = new Mat();
+            Cv2.Compare(bestIdx, new Scalar(i), isIndex, CmpTypes.EQ);
+            Cv2.BitwiseAnd(isIndex, mask, results[i]);
+        }
 
         foreach (var cm in colorMasks)
             cm?.Dispose();
@@ -664,32 +632,6 @@ public class DetectorService(
     {
         token.Dispose();
         _mog2.Dispose();
-    }
-
-    private T MeasureStage<T>(string stageName, Func<T> action)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            return action();
-        }
-        finally
-        {
-            _detectionTiming.RecordStage(stageName, stopwatch.Elapsed);
-        }
-    }
-
-    private void MeasureStage(string stageName, Action action)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            action();
-        }
-        finally
-        {
-            _detectionTiming.RecordStage(stageName, stopwatch.Elapsed);
-        }
     }
 }
 

@@ -223,68 +223,40 @@ public class BroadcastService : IHostedService, IDisposable
         var frameBytes = CaptureService.streamWidth * CaptureService.streamHeight * 3;
         var buffer = new byte[frameBytes]; // local, not a field — no need to keep it alive on the instance
 
-
-        var frameInterval = TimeSpan.FromSeconds(1.0 / CaptureService.streamFps);
-        var sw = Stopwatch.StartNew();
-        var nextFrameTime = sw.Elapsed;
-        int frameCount = 0;
-        var lastLog = sw.Elapsed;
         while (!token.IsCancellationRequested)
         {
+            // Waits (sleeping, no CPU spin) until CaptureService signals a new frame,
+            // or the token is cancelled.
+            try
+            {
+                _captureService.FrameReadySignal.Wait(token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
             if (!_captureService.TryGetLatestFrame(frame) || frame.Empty())
             {
-                Task.Delay(5); // avoid a hot spin when no frame is ready yet
                 continue;
             }
 
-
-            // TODO this is no longer exactly correct but the point still stands
-            // Capture framerate is way heigher than detection, so its fine to just do the overlay here on new cameara frame rather than after actual detection
             lock (_captureService.debugOverlayLock)
             {
-                // _captureService.debugOverlayFrame.SaveImage("debug overlay.png");
                 using var expanded = new Mat();
                 Cv2.Resize(_captureService.debugOverlayFrame, expanded,
                     new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
                 Blend.BlendOverlay(expanded, frame, 1);
             }
 
-            // IT won't error if we throw more frames at the decoder but it does slow it down for no benefit
-            // This is done with a timer instead a simple frame change since there might be different frame rates that we capture at vs broadcasting
-            var now = sw.Elapsed;
-            if (now < nextFrameTime)
-            {
-                var wait = nextFrameTime - now;
-                if (wait > TimeSpan.FromMilliseconds(1))
-                    Task.Delay(wait);
-                continue;
-            }
-
-            nextFrameTime += frameInterval;
-            // if we fell badly behind, don't try to "catch up" by bursting frames
-            if (nextFrameTime < now)
-                nextFrameTime = now + frameInterval;
-
-            // Cv2.ImShow("frame", frame);
-            // Cv2.WaitKey(1);
-
             Marshal.Copy(frame.Data, buffer, 0, frameBytes);
-
             try
             {
                 stdin.Write(buffer, 0, frameBytes);
-                frameCount++;
             }
             catch
             {
                 break; // ffmpeg pipe closed/dead
-            }
-
-            if (sw.Elapsed - lastLog > TimeSpan.FromSeconds(1))
-            {
-                // Console.WriteLine($"[encode] fps written: {frameCount}");
-                frameCount = 0;
-                lastLog = sw.Elapsed;
             }
         }
     }

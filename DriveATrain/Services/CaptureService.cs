@@ -6,6 +6,8 @@ namespace DriveATrain.Services;
 
 public class CaptureService : IHostedService
 {
+    public SemaphoreSlim FrameReadySignal = new(0);
+
     // public const int CAMERA_WIDTH = 640;
     //
     // public const int CAMERA_HEIGHT = 480;
@@ -30,7 +32,7 @@ public class CaptureService : IHostedService
     private Task? _captureTask;
 
     private Mat latestFrame = new Mat();
-    public Mat latestFrameLock = new();
+    public object latestFrameLock = new();
 
     public Mat debugOverlayFrame =
         new Mat(new Size(DETECTION_WIDTH, DETECTION_HEIGHT), MatType.CV_8UC4, new Scalar(0, 0, 0, 0));
@@ -88,14 +90,16 @@ public class CaptureService : IHostedService
         _process = Process.Start(psi);
         if (_process == null) return;
 
-        // Drain stderr continuously so ffmpeg never blocks writing logs.
         _ = Task.Run(async () =>
         {
             try
             {
                 using var reader = _process.StandardError;
-                while (!reader.EndOfStream)
-                    await reader.ReadLineAsync();
+                string? line;
+                while ((line = await reader.ReadLineAsync()) != null)
+                {
+                    // optionally inspect/log line here
+                }
             }
             catch
             {
@@ -123,6 +127,7 @@ public class CaptureService : IHostedService
             {
                 frame.CopyTo(latestFrame);
             }
+            FrameReadySignal.Release();
         }
     }
 
