@@ -67,8 +67,8 @@ public class DetectorService(
                 Blend.BlendPrepared(_goZoneOverlayPrepared, debugFrame);
 
             // TODO expensive, probably because its full res, but needs to be since the markers show up quite small
-            // var dirMarkers = IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinaryFullRes);
-            var dirMarkers = new List<Point>();
+            var dirMarkers = IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinaryFullRes);
+            // var dirMarkers = new List<Point>();
             var units = CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers);
 
             LayoutDraw.DrawUnits(debugFrame, units);
