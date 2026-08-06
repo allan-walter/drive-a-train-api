@@ -302,6 +302,7 @@ public class DetectorService(
     // NOTE, this frame is the full size since the white dots are quite small
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, Mat mask)
     {
+        // DebugWindow.Show("test", frame.Clone());
         using var hsv = new Mat();
         Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
 
