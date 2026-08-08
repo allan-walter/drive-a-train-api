@@ -68,40 +68,34 @@ public class VisionConfig
 
         Layout = JsonSerializer.Deserialize<Layout>(jsonString, new JsonSerializerOptions
         {
-            PropertyNameCaseInsensitive = true
+            PropertyNameCaseInsensitive = true,
+            Converters = { new JsonStringEnumConverter() }
         });
     }
-}
-
-public class AppConfig
-{
-    public bool FirstRun { get; set; }
-    public bool Headless { get; set; }
 }
 
 public class Layout
 {
     public List<Node> Nodes { get; set; }
     public List<Edge> Edges { get; set; }
-    public List<Block> Blocks { get; set; }
 }
 
 public class Edge
 {
-    public Node A { get; set; }
-    public Node B { get; set; }
+    public Guid A { get; set; }
+    public Guid B { get; set; }
 }
 
-public class Block
-{
-    public Node Point { get; set; }
-    public int Distance { get; set; }
-}
-
-public struct Node
+public class LayoutPoint
 {
     public int X { get; set; }
     public int Y { get; set; }
+
+    public LayoutPoint(int x, int y)
+    {
+        X = x;
+        Y = y;
+    }
 
     public Point ToPoint()
     {
@@ -112,14 +106,11 @@ public struct Node
     {
         return new Vector2Int(X, Y);
     }
+}
 
-    public Node()
-    {
-    }
-
-    public Node(int x, int y)
-    {
-        X = x;
-        Y = y;
-    }
+public struct Node
+{
+    public Guid Id { get; set; }
+    public LayoutPoint Point { get; set; }
+    public SpeedLimit Speed { get; set; }
 }

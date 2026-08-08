@@ -48,9 +48,9 @@ public readonly struct Vector2Int
         Y = y;
     }
 
-    public Node ToLayoutPoint()
+    public LayoutPoint ToLayoutPoint()
     {
-        return new Node(X, Y);
+        return new LayoutPoint(X, Y);
     }
 
     public static Vector2Int operator -(Vector2Int v) => new Vector2Int(-v.X, -v.Y);

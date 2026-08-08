@@ -4,7 +4,7 @@ public class PathProjector
 {
     public struct ProjectionResult
     {
-        public Node Point; // the projected point (rounded to int grid)
+        public LayoutPoint Point; // the projected point (rounded to int grid)
         public int PathIndex; // which path in the list
         public int SegmentIndex; // index i, meaning segment (path[i], path[i+1])
         public double T; // 0..1 position along that segment
@@ -18,7 +18,7 @@ public class PathProjector
         this.layout = config.Vision.Layout;
     }
 
-    public ProjectionResult Project(Node p)
+    public ProjectionResult Project(LayoutPoint p)
     {
         ProjectionResult best = new ProjectionResult { DistanceSq = double.MaxValue };
         bool found = false;
@@ -27,8 +27,9 @@ public class PathProjector
         {
             var edge = layout.Edges[edgeIndex];
 
-            var a = edge.A;
-            var b = edge.B;
+            var a = layout.Nodes.First(n => n.Id == edge.A).Point;
+            var b = layout.Nodes.First(n => n.Id == edge.B).Point;
+
             double dx = b.X - a.X;
             double dy = b.Y - a.Y;
             double lenSq = dx * dx + dy * dy;
@@ -61,7 +62,7 @@ public class PathProjector
             {
                 best = new ProjectionResult
                 {
-                    Point = new Node(roundedX, roundedY),
+                    Point = new LayoutPoint(roundedX, roundedY),
                     PathIndex = edgeIndex,
                     T = t,
                     DistanceSq = distSq

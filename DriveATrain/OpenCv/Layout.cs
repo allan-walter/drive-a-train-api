@@ -13,7 +13,10 @@ public class LayoutDraw
 
         foreach (var edge in config.Vision.Layout.Edges)
         {
-            Cv2.Line(frame, edge.A.ToPoint(), edge.B.ToPoint(), new Scalar(0, 255, 0, 255), 1);
+            var a = config.Vision.Layout.Nodes.First(n => n.Id == edge.A);
+            var b = config.Vision.Layout.Nodes.First(n => n.Id == edge.B);
+
+            Cv2.Line(frame, a.Point.ToPoint(), b.Point.ToPoint(), new Scalar(0, 255, 0, 255), 1);
         }
 
         return frame;
