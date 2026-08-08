@@ -31,7 +31,7 @@ public class PovVideoService : IHostedService
         StartFfmpeg(_cts.Token);
         // One background task drives both the capture->stdin write and stdout->clients broadcast,
         // via two inner loops on the same Task so a single Stop/Dispose path covers everything.
-        _pumpTask = Task.Run(() => RunPump(_cts.Token));
+        _pumpTask = Task.Run(() => BroadcastLoop(_cts.Token));
 
         return Task.CompletedTask;
     }
@@ -42,7 +42,8 @@ public class PovVideoService : IHostedService
 
         var psi = new ProcessStartInfo
         {
-            FileName = "ffmpeg", // Ensure ffmpeg is in system PATH or use full path like @"C:\ffmpeg\bin\ffmpeg.exe"
+            // FileName = "ffmpeg", // Ensure ffmpeg is in system PATH or use full path like @"C:\ffmpeg\bin\ffmpeg.exe"
+            FileName = "/usr/bin/ffmpeg", 
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -126,18 +127,6 @@ public class PovVideoService : IHostedService
         catch
         {
             /* process exiting */
-        }
-    }
-
-    private async Task RunPump(CancellationToken token)
-    {
-        try
-        {
-            await BroadcastLoop(token);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[POV broadcast] pump failed: {ex}");
         }
     }
 
