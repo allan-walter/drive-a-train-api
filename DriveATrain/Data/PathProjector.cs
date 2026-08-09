@@ -4,12 +4,13 @@ using DriveATrain.Services;
 
 namespace DriveATrain;
 
-public class PathProjector
+public static class PathProjector
 {
     public class ProjectionResult
     {
         public Vector2Int Point; // the projected point (rounded to int grid)
 
+        public Node Node;
         public Edge CurrentEdge;
 
         // Depends on the distance
@@ -18,21 +19,18 @@ public class PathProjector
         public double DistanceSq;
     }
 
-    private readonly Layout layout;
-
-    public PathProjector(Config config)
-    {
-        layout = config.Layout;
-    }
-
-    public ProjectionResult ProjectDistance(Vector2Int p, double dist)
+    // Node is needed so it knows what edges to continue down on, TODO what does this do for a unit thats on an inactive path (not reachable by turnout)
+    public static ProjectionResult ProjectDistance(Layout layout, Node pNode, Vector2Int p, double dist)
     {
         ProjectionResult? best = null;
+        var edges = layout.ConnectedEdgesByTurnout(pNode);
 
         // Step one, loop all edges and find the closest one, and out position on that edge
-        for (int edgeIndex = 0; edgeIndex < layout.Edges.Count; edgeIndex++)
+        for (int edgeIndex = 0; edgeIndex < edges.Count; edgeIndex++)
         {
-            var edge = layout.Edges[edgeIndex];
+            var edge = edges[edgeIndex];
+            var nodeA = layout.Nodes.First(n => n.Id == edge.A);
+            var nodeB = layout.Nodes.First(n => n.Id == edge.B);
 
             var a = layout.Nodes.First(n => n.Id == edge.A).Point;
             var b = layout.Nodes.First(n => n.Id == edge.B).Point;
@@ -67,8 +65,12 @@ public class PathProjector
 
             if (best == null || distSq < best.DistanceSq)
             {
+                // whichever endpoint the projection landed nearer to (by t) is the closest node on this edge
+                var closestNode = t <= 0.5 ? nodeA : nodeB;
+
                 best = new ProjectionResult
                 {
+                    Node = closestNode,
                     Point = new Vector2Int(roundedX, roundedY),
                     CurrentEdge = edge,
                     TouchedEdges = new List<Edge> { edge },

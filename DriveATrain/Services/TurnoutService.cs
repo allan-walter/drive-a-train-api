@@ -6,12 +6,12 @@ namespace DriveATrain.Services;
 public class TurnoutService
 {
     public SerialPort Port;
-    private TurnoutConfig _config;
+    private Config config;
 
     public TurnoutService(Config config)
     {
         Port = new SerialPort(config.Turnout.Port, 115200); // change this
-        _config = config.Turnout;
+        this.config = config;
     }
 
     private async Task<bool> SendCommand(string command)
@@ -41,12 +41,19 @@ public class TurnoutService
     {
         var state = turnout.State;
 
-        if (_config.Locations.FirstOrDefault(l => l.Pin == turnout.Pin)?.Reverse ?? false)
+        if (config.Turnout.Locations.FirstOrDefault(l => l.Pin == turnout.Pin)?.Reverse ?? false)
             state = !state;
-        
+
+        var layoutTurnout = config.Layout.Turnouts.First(t => t.Id == turnout.Pin);
+        // TODO how to define which way around this is
+        layoutTurnout.ActiveRoute = state ? 1: 0;
+
         await SendCommand($"{turnout.Pin}{(state ? "f" : "b")}");
     }
 
+    // TODO there is an issue where if the center of the train is right over the turnout we dont't know which active path its actually on. 
+    // Needs to be the 2 paths joined by the turnout which should be what the train is on even if its marginally futher away than the other point
+    // Remember the train could actuaally be on the other path though just in a stop state so don't be too harsh with it
     private async Task Connect()
     {
         try

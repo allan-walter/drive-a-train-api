@@ -94,12 +94,14 @@ public class UnitMarkerResponse
 {
     public Vector2Int Front { get; set; }
     public Vector2Int Back { get; set; }
+    public Vector2Int Center { get; set; }
     public MarkerDef Marker { get; set; }
 
     public UnitMarkerResponse(Vector2Int front, Vector2Int back, MarkerDef marker)
     {
         Front = front;
         Back = back;
+        Center = new Vector2Int((front.X + back.X) / 2, (front.Y + back.Y) / 2);
         Marker = marker;
     }
 }
@@ -184,6 +186,6 @@ public static class RailUnitMocks
         //     back: new Transform(new Vector2Int(350 + offsetB, 250),
         //         new Vector2Double(0, 0)) // midpoint of A-D (left side)
         // );
-        return new List<RailUnitGet> {};
+        return new List<RailUnitGet> { };
     }
 }

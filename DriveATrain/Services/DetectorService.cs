@@ -13,7 +13,6 @@ public class DetectorService(
     DccService dccService,
     UnitService unitService,
     IHubContext<UnitHub> unitHub,
-    PathProjector pathProjector,
     Config config) : IHostedService, IDisposable
 {
     private BackgroundSubtractorMOG2 _mog2;
@@ -29,7 +28,6 @@ public class DetectorService(
 
     public void Process(Mat frame)
     {
-        var processStopwatch = Stopwatch.StartNew();
         using var processingFrame = new Mat();
         Cv2.Resize(frame, processingFrame,
             new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
@@ -60,7 +58,6 @@ public class DetectorService(
 
             Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
 
-            LayoutHelpers.DrawLayout(config, frame);
 
             if (_goZoneOverlayPrepared != null)
                 Blend.BlendPrepared(_goZoneOverlayPrepared, debugFrame);
@@ -70,6 +67,8 @@ public class DetectorService(
             // var dirMarkers = new List<Point>();
             var units = CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers);
 
+            LayoutHelpers.DrawLayout(config,
+                units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive)?.Center, debugFrame);
             LayoutHelpers.DrawUnits(debugFrame, units);
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
@@ -423,8 +422,10 @@ public class DetectorService(
                 // Cv2.Circle(frame, new Point(best.front.Position.X, best.front.Position.Y), 20, Colors.GREEN);
 
                 // res.Add(new UnitMarkerResponse(best.front, best.back, marker));
-                var frontProjection = pathProjector.ProjectDistance(best.front.Position, 0);
-                var backProjection = pathProjector.ProjectDistance(best.back.Position, 0);
+                var nodeFront = config.Layout.ClosestNode(best.front.Position);
+                var frontProjection = PathProjector.ProjectDistance(config.Layout, nodeFront, best.front.Position, 0);
+                var nodeBack = config.Layout.ClosestNode(best.back.Position);
+                var backProjection = PathProjector.ProjectDistance(config.Layout, nodeBack,best.back.Position, 0);
                 res.Add(new UnitMarkerResponse(frontProjection.Point, backProjection.Point, marker));
             }
         }

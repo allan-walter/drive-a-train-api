@@ -12,6 +12,11 @@ public class LimiterService
         this.config = config.Vision;
     }
 
+    private SpeedLimit ProcessLimit(Vector2Int pos, Mat debugFrame)
+    {
+        return SpeedLimit.NORMAL;
+    }
+
     public SpeedResult ProcessLimits(Mat frame, Vector2Int front, Vector2Int back, Mat debugFrame)
     {
         var limits = new SpeedResult();
@@ -22,7 +27,7 @@ public class LimiterService
         // var point = pathProjector.Project(front.Position.ToLayoutPoint());
         //
         // Cv2.Circle(debugFrame, point.Point.ToPoint(), 10, new Scalar(255, 0, 0, 255));
-
+        //
         // using var binary = new Mat();
         // Cv2.Threshold(config.blocks, binary, 254.0, 255.0, ThresholdTypes.Binary);
         //
