@@ -44,6 +44,7 @@ public class UnitDefinition
     public int Address { get; set; }
     public int FrontCouplerIndex { get; set; }
     public int BackCouplerIndex { get; set; }
+    public bool? DirMarkerOnBack { get; set; }
 }
 
 // The midpoint when we've kinda identified something

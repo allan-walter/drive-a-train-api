@@ -1,4 +1,5 @@
 ﻿using System.Drawing;
+using System.Text.Json.Serialization;
 using OpenCvSharp;
 
 namespace DriveATrain.OpenCv;
@@ -42,15 +43,12 @@ public readonly struct Vector2Int
     public int X { get; }
     public int Y { get; }
 
+
+    [JsonConstructor]
     public Vector2Int(int x = 0, int y = 0)
     {
         X = x;
         Y = y;
-    }
-
-    public LayoutPoint ToLayoutPoint()
-    {
-        return new LayoutPoint(X, Y);
     }
 
     public static Vector2Int operator -(Vector2Int v) => new Vector2Int(-v.X, -v.Y);

@@ -82,6 +82,8 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 var app = builder.Build();
+
+app.Services.GetService<Config>().Layout.Load();
 app.Urls.Add("http://0.0.0.0:5127");
 
 // Configure the HTTP request pipeline.

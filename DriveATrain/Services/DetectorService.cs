@@ -58,11 +58,10 @@ public class DetectorService(
             //     () => Helpers.InverseMaskOverlay(config.Vision.blocks));
             using var goZoneOverlay = Helpers.InverseMaskOverlay(config.Vision.goZone);
 
-            Cv2.Circle(debugFrame, new Point(500, 200), 20, new Scalar(0, 0, 255, 255), -1);
             Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
 
-            if (layoutOverlayPrepared != null)
-                Blend.BlendPrepared(layoutOverlayPrepared, debugFrame);
+            LayoutHelpers.DrawLayout(config, frame);
+
             if (_goZoneOverlayPrepared != null)
                 Blend.BlendPrepared(_goZoneOverlayPrepared, debugFrame);
 
@@ -71,7 +70,7 @@ public class DetectorService(
             // var dirMarkers = new List<Point>();
             var units = CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers);
 
-            LayoutDraw.DrawUnits(debugFrame, units);
+            LayoutHelpers.DrawUnits(debugFrame, units);
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
@@ -325,7 +324,7 @@ public class DetectorService(
         var points = contours.Select(c => Helpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint())).ToList();
         foreach (var point in points)
         {
-            Cv2.Circle(debugFrame, point, 3, new Scalar(0, 255, 0, 255), -1);
+            Cv2.Circle(debugFrame, point, 3, Colors.Gold, -1);
         }
 
         markers.AddRange(points);
@@ -376,26 +375,17 @@ public class DetectorService(
         foreach (var marker in markers)
         {
             var contour2f = marker.Contour.Select(p => new Point(p.X, p.Y)).ToArray();
-            var test = Cv2.ContourArea(marker.Contour);
             var rotatedRect = Cv2.MinAreaRect(contour2f);
             var boxPoints = rotatedRect.Points(); // Point2f[4]
 
             var box = boxPoints.Select(p => new Vector2Int((int)p.X, (int)p.Y)).ToArray();
 
-            for (int i = 0; i < 4; i++)
-            {
-                // Cv2.Line(debugFrame,
-                //     new Point((int)boxPoints[i].X, (int)boxPoints[i].Y),
-                //     new Point((int)boxPoints[(i + 1) % 4].X, (int)boxPoints[(i + 1) % 4].Y),
-                //     Scalar.Red, 5);
-            }
-
-            Point? frontDirMarker = dirMarkers.FirstOrDefault(p =>
+            // Could be the front or the back depending on the unit
+            // TODO I dont think thjis would ever actually be null
+            Point? point = dirMarkers.FirstOrDefault(p =>
                 RectContainsPoint(rotatedRect, p));
-            if (frontDirMarker == default && !dirMarkers.Any(p => RectContainsPoint(rotatedRect, p)))
-                frontDirMarker = null;
 
-            if (frontDirMarker != null)
+            if (point != null)
             {
                 (double dist, Transform front, Transform back) best = default;
                 double bestDist = double.MaxValue;
@@ -416,7 +406,12 @@ public class DetectorService(
                     var front = new Transform(midFront, normal);
                     var back = new Transform(midBack, -normal);
 
-                    double dist = a.DistanceTo(frontDirMarker.Value) + b.DistanceTo(frontDirMarker.Value);
+                    if (marker.Unit != null && marker.Unit.DirMarkerOnBack.GetValueOrDefault())
+                    {
+                        (front, back) = (back, front);
+                    }
+
+                    double dist = a.DistanceTo(point.Value) + b.DistanceTo(point.Value);
 
                     if (dist < bestDist)
                     {
@@ -428,10 +423,9 @@ public class DetectorService(
                 // Cv2.Circle(frame, new Point(best.front.Position.X, best.front.Position.Y), 20, Colors.GREEN);
 
                 // res.Add(new UnitMarkerResponse(best.front, best.back, marker));
-                var frontProjection = pathProjector.Project(best.front.Position.ToLayoutPoint());
-                var backProjection = pathProjector.Project(best.back.Position.ToLayoutPoint());
-                res.Add(new UnitMarkerResponse(frontProjection.Point.ToVector2Int(),
-                    backProjection.Point.ToVector2Int(), marker));
+                var frontProjection = pathProjector.ProjectDistance(best.front.Position, 0);
+                var backProjection = pathProjector.ProjectDistance(best.back.Position, 0);
+                res.Add(new UnitMarkerResponse(frontProjection.Point, backProjection.Point, marker));
             }
         }
 
@@ -582,7 +576,6 @@ public class DetectorService(
     }
 
     private Task? processLoop;
-    private Blend.PreparedOverlay? layoutOverlayPrepared;
     private Blend.PreparedOverlay? _goZoneOverlayPrepared;
 
 
@@ -590,9 +583,6 @@ public class DetectorService(
     {
         int size = ResolutionScaler.ScaleKernel(9);
         Blur = new Size(size, size);
-// once at startup
-        using var layoutOverlay = LayoutDraw.DrawLayout(config);
-        layoutOverlayPrepared = Blend.Prepare(layoutOverlay, 1);
 
         using var goZoneOverlaySrc = Helpers.InverseMaskOverlay(config.Vision.goZone);
         _goZoneOverlayPrepared = Blend.Prepare(goZoneOverlaySrc, 0.4);

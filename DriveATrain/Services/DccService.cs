@@ -23,13 +23,13 @@ public class DccService : IHostedService
 
     public SerialPort Port;
 
-    private DccConfig config;
+    private Config config;
     IHostApplicationLifetime _lifetime;
     private BroadcastService _broadcastService;
 
     public DccService(Config config, IHostApplicationLifetime lifetime, BroadcastService broadcastService)
     {
-        this.config = config.Dcc;
+        this.config = config;
         _lifetime = lifetime;
         _broadcastService = broadcastService;
 
@@ -114,18 +114,18 @@ public class DccService : IHostedService
 
     public LimitValues GetThrottleLimits(bool @override)
     {
-        var res = new LimitValues(config);
+        var res = new LimitValues(config.Dcc);
 
         // Dev override. Default max speed still applies
         if (!@override)
         {
             if (ForwardLimit == SpeedLimit.SLOW)
-                res.Forward = config.SlowThrottleValue;
+                res.Forward = config.Dcc.SlowThrottleValue;
             else if (ForwardLimit == SpeedLimit.STOP)
                 res.Forward = 0.0;
 
             if (ReverseLimit == SpeedLimit.SLOW)
-                res.Reverse = config.SlowThrottleValue;
+                res.Reverse = config.Dcc.SlowThrottleValue;
             else if (ReverseLimit == SpeedLimit.STOP)
                 res.Reverse = 0.0;
         }
@@ -152,13 +152,15 @@ public class DccService : IHostedService
             throttleValue = Math.Min(throttleValue, limits.Reverse);
         }
 
-        throttleValue = Math.Min(throttleValue, config.MaxSpeed);
+        throttleValue = Math.Min(throttleValue, config.Dcc.MaxSpeed);
 
         Debug.WriteLine($"Throttle: {throttleValue}, Reverse: {reverse}");
 
-        _broadcastService.engineAudio.SetSpeed(throttleValue, config.MaxSpeed);
+        _broadcastService.engineAudio.SetSpeed(throttleValue, config.Dcc.MaxSpeed);
 
-        SendCommand($"<t {config.LocoAddress} {(int)(throttleValue * 100)} {(reverse ? 0 : 1)}>");
+        var locoAddress = config.Units.First((u => u.Type == UnitType.Locomotive)).Address;
+
+        SendCommand($"<t {locoAddress} {(int)(throttleValue * 100)} {(reverse ? 0 : 1)}>");
 
         await Task.CompletedTask;
     }
