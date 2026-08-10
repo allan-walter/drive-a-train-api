@@ -2,9 +2,8 @@ using DriveATrain;
 using DriveATrain.Auth;
 using DriveATrain.Data;
 using DriveATrain.Hubs;
-using DriveATrain.OpenCv;
 using DriveATrain.Services;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using DriveATrain.Services.Layout;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -23,6 +22,9 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSingleton<DccService>();
+builder.Services.AddSingleton<LayoutService>();
+builder.Services.AddSingleton<LayoutPathService>();
+builder.Services.AddSingleton<LayoutDrawingService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DccService>());
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DetectorService>());
@@ -30,6 +32,7 @@ builder.Services.AddSingleton<LimiterService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<UnitService>());
 builder.Services.AddSingleton<UnitService>();
 builder.Services.AddSingleton<TurnoutService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TurnoutService>());
 builder.Services.AddSingleton<PovVideoService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PovVideoService>());
 builder.Services.AddSingleton<CaptureService>();
@@ -82,7 +85,6 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 var app = builder.Build();
 
-app.Services.GetService<Config>().Layout.Load();
 app.Urls.Add("http://0.0.0.0:5127");
 
 // Configure the HTTP request pipeline.
@@ -191,7 +193,10 @@ static async Task SeedAsync(UserManager<IdentityUser> userManager, RoleManager<I
     }
 }
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+namespace DriveATrain
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+    {
+        public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    }
 }

@@ -1,15 +1,20 @@
 ﻿using System.IO.Ports;
 using DriveATrain.Hubs;
+using DriveATrain.Services.Layout;
 
 namespace DriveATrain.Services;
 
-public class TurnoutService
+public class TurnoutService : IHostedService
 {
     public SerialPort Port;
     private Config config;
+    private LayoutService _layoutService;
+    private LayoutPathService _layoutPathService;
 
-    public TurnoutService(Config config)
+    public TurnoutService(Config config, LayoutService layoutService, LayoutPathService layoutPathService)
     {
+        _layoutService = layoutService;
+        _layoutPathService = layoutPathService;
         Port = new SerialPort(config.Turnout.Port, 115200); // change this
         this.config = config;
     }
@@ -44,9 +49,10 @@ public class TurnoutService
         if (config.Turnout.Locations.FirstOrDefault(l => l.Pin == turnout.Pin)?.Reverse ?? false)
             state = !state;
 
-        var layoutTurnout = config.Layout.Turnouts.First(t => t.Id == turnout.Pin);
+        var layoutTurnout = _layoutService.Turnouts.First(t => t.Turnout.Id == turnout.Pin);
         // TODO how to define which way around this is
-        layoutTurnout.ActiveRoute = state ? 1: 0;
+        layoutTurnout.ActiveRoute = state ? 1 : 0;
+        _layoutPathService.CalculatePathsByTurnout();
 
         await SendCommand($"{turnout.Pin}{(state ? "f" : "b")}");
     }
@@ -67,5 +73,17 @@ public class TurnoutService
         {
             // Console.WriteLine(e);
         }
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        _layoutPathService.CalculatePathsByTurnout();
+
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
     }
 }

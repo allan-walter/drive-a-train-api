@@ -1,7 +1,7 @@
-﻿using DriveATrain;
-using DriveATrain.OpenCv;
-using DriveATrain.Services;
+﻿using DriveATrain.OpenCv;
 using OpenCvSharp;
+
+namespace DriveATrain.Services;
 
 public class LimiterService
 {

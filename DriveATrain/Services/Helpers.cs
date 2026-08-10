@@ -1,7 +1,9 @@
-﻿using DriveATrain.Services;
+﻿using DriveATrain.OpenCv;
 using OpenCvSharp;
 
-public static class Helpers
+namespace DriveATrain.Services;
+
+public static class OpenCvHelpers
 {
     // Change white to transparent, and only return black
     public static Mat InverseMaskOverlay(Mat mat)

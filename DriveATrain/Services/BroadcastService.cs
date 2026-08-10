@@ -1,16 +1,15 @@
 ﻿using System.Collections.Concurrent;
-using System.Threading.Channels;
-using OpenCvSharp;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
-using DriveATrain;
 using DriveATrain.Audio;
 using DriveATrain.OpenCv;
-using DriveATrain.Services;
 using NAudio.Wave;
 using NLayer.NAudioSupport;
+using OpenCvSharp;
+
+namespace DriveATrain.Services;
 
 public class BroadcastService : IHostedService, IDisposable
 {

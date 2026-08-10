@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using DriveATrain.Hubs;
+using DriveATrain.OpenCv;
 using Microsoft.Extensions.Options;
 
 namespace DriveATrain.Services;

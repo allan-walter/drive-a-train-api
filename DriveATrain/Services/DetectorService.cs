@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using DriveATrain.Hubs;
 using DriveATrain.OpenCv;
+using DriveATrain.Services.Layout;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using OpenCvSharp;
@@ -12,6 +13,8 @@ public class DetectorService(
     CaptureService captureService,
     DccService dccService,
     UnitService unitService,
+    LayoutService layoutService,
+    LayoutDrawingService layoutDrawingService,
     IHubContext<UnitHub> unitHub,
     Config config) : IHostedService, IDisposable
 {
@@ -44,9 +47,10 @@ public class DetectorService(
         {
             markers = GetMarkerSeeds(processingFrame, debugFrame);
 
-            using var combinedMaskColor = Helpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList());
+            using var combinedMaskColor =
+                OpenCvHelpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList());
 
-            combinedMaskBinary = Helpers.CombineMasks(markers.Select(m => m.Mask).ToList());
+            combinedMaskBinary = OpenCvHelpers.CombineMasks(markers.Select(m => m.Mask).ToList());
 
             // TODO gross, but dir marker dection needs a full size mask
             Cv2.Resize(combinedMaskBinary, combinedMaskBinaryFullRes,
@@ -54,7 +58,7 @@ public class DetectorService(
 
             // using var blocksOverlay = MeasureStage("overlay.blocks-overlay",
             //     () => Helpers.InverseMaskOverlay(config.Vision.blocks));
-            using var goZoneOverlay = Helpers.InverseMaskOverlay(config.Vision.goZone);
+            using var goZoneOverlay = OpenCvHelpers.InverseMaskOverlay(config.Vision.goZone);
 
             Blend.BlendOverlay(combinedMaskColor, debugFrame, 1);
 
@@ -67,9 +71,9 @@ public class DetectorService(
             // var dirMarkers = new List<Point>();
             var units = CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers);
 
-            LayoutHelpers.DrawLayout(config,
+            layoutDrawingService.DrawLayout(
                 units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive)?.Center, debugFrame);
-            LayoutHelpers.DrawUnits(debugFrame, units);
+            layoutDrawingService.DrawUnits(debugFrame, units);
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
@@ -320,7 +324,7 @@ public class DetectorService(
 
         var markers = new List<Point>();
 
-        var points = contours.Select(c => Helpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint())).ToList();
+        var points = contours.Select(c => OpenCvHelpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint())).ToList();
         foreach (var point in points)
         {
             Cv2.Circle(debugFrame, point, 3, Colors.Gold, -1);
@@ -381,8 +385,15 @@ public class DetectorService(
 
             // Could be the front or the back depending on the unit
             // TODO I dont think thjis would ever actually be null
-            Point? point = dirMarkers.FirstOrDefault(p =>
-                RectContainsPoint(rotatedRect, p));
+            // Get the cliosertt onem it might be just outside if the mask detection is loose, closets should be fine
+            Point2f center = rotatedRect.Center;
+
+            Point? point = dirMarkers
+                .OrderBy(p => Math.Pow(p.X - center.X, 2) + Math.Pow(p.Y - center.Y, 2))
+                .Select(p => (Point?)p)
+                .FirstOrDefault();
+            // Point? point = dirMarkers.FirstOrDefault(p =>
+            //     RectContainsPoint(rotatedRect, p));
 
             if (point != null)
             {
@@ -421,12 +432,9 @@ public class DetectorService(
 
                 // Cv2.Circle(frame, new Point(best.front.Position.X, best.front.Position.Y), 20, Colors.GREEN);
 
-                // res.Add(new UnitMarkerResponse(best.front, best.back, marker));
-                var nodeFront = config.Layout.ClosestNode(best.front.Position);
-                var frontProjection = PathProjector.ProjectDistance(config.Layout, nodeFront, best.front.Position, 0);
-                var nodeBack = config.Layout.ClosestNode(best.back.Position);
-                var backProjection = PathProjector.ProjectDistance(config.Layout, nodeBack,best.back.Position, 0);
-                res.Add(new UnitMarkerResponse(frontProjection.Point, backProjection.Point, marker));
+                var frontPos = layoutService.SnapToPath(best.front.Position).point;
+                var backPos = layoutService.SnapToPath(best.back.Position).point;
+                res.Add(new UnitMarkerResponse(frontPos, backPos, marker));
             }
         }
 
@@ -585,7 +593,7 @@ public class DetectorService(
         int size = ResolutionScaler.ScaleKernel(9);
         Blur = new Size(size, size);
 
-        using var goZoneOverlaySrc = Helpers.InverseMaskOverlay(config.Vision.goZone);
+        using var goZoneOverlaySrc = OpenCvHelpers.InverseMaskOverlay(config.Vision.goZone);
         _goZoneOverlayPrepared = Blend.Prepare(goZoneOverlaySrc, 0.4);
 
         _mog2 = BackgroundSubtractorMOG2.Create(history: 500, varThreshold: 150.0, detectShadows: true);

@@ -1,4 +1,5 @@
 ﻿using DriveATrain.Hubs;
+using DriveATrain.OpenCv;
 using Microsoft.AspNetCore.SignalR;
 
 namespace DriveATrain.Services;

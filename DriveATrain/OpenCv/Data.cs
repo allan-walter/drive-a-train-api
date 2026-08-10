@@ -1,9 +1,9 @@
 ﻿// Replace with your actual enum values
 
-using DriveATrain.OpenCv;
 using DriveATrain.Services;
 using OpenCvSharp;
 
+namespace DriveATrain.OpenCv;
 
 // HSV-range based color used for marker lookup/classification.
 public class LookupColor
