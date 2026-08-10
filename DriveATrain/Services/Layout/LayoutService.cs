@@ -26,6 +26,7 @@ public class LayoutService
         return layout.Edges.Where(e => e.A == n.Id || e.B == n.Id).ToList();
     }
 
+    // TODO do yiu really need a separate path service? Everytgubng ended up in it so it might aswell just be here
     // IMPORTANT, this isn't just the physically closest node, e.g. you could be kinda close to one, but closer to a line of 2 nodes far apart. so we're actually on that edge / path not 
     // the physically closer one
     // TODO theres kinda a double up between this and the path stuff, but this is needed before calling the path functions
@@ -46,19 +47,17 @@ public class LayoutService
 
 
             // The end needs moved back a bit so there is clear separation and it doesn’t accidentally get picked up by a train on the turnout. The path is still valid and there could be something on it, there just needs to be a clear separation 
-            // So if there is only 1 connected node then thats going the other way, its disconnected
-            // // TODO no, this would do it at the end of a path thats not close to a turnout
-            // if (layout.Turnouts.Any(t => t.Node.Id == nodeA.Id))
-            // {
-            //     // Loose idea is the user couldnt move anything closer than this, so should be safe to move it by that much
-            //     ProjectDistance(nodeA, a, config.Vision.StopWhenPixelsLessThan);
-            // }
-            //
-            // if (layout.Turnouts.Any(t => t.Node.Id == nodeB.Id))
-            // {
-            //     // Loose idea is the user couldnt move anything closer than this, so should be safe to move it by that much
-            //     ProjectDistance(nodeB, b, config.Vision.StopWhenPixelsLessThan);
-            // }
+            if (config.Layout.Turnouts.Any(t => t.NodeId == nodeA.Id))
+            {
+                // Loose idea is the user couldnt move anything closer than this, so should be safe to move it by that much
+                ProjectDistance(nodeA, a, config.Vision.StopWhenPixelsLessThan);
+            }
+
+            if (config.Layout.Turnouts.Any(t => t.NodeId == nodeB.Id))
+            {
+                // Loose idea is the user couldnt move anything closer than this, so should be safe to move it by that much
+                ProjectDistance(nodeB, b, config.Vision.StopWhenPixelsLessThan);
+            }
 
             double dx = b.X - a.X;
             double dy = b.Y - a.Y;
@@ -99,8 +98,6 @@ public class LayoutService
 
         return (best.Value.node, new Vector2Int());
     }
-
-
 
 
     // Node is needed so it knows what edges to continue down on, it should probably be close the position but doesn' matter too much, TODO what does this do for a unit thats on an inactive path (not reachable by turnout)
