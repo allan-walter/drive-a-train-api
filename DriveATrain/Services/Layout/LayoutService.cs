@@ -35,6 +35,7 @@ public class LayoutService
     public ProjectionResult ProjectOnPath(Vector2Int p)
     {
         var nodesById = layout.Nodes.ToDictionary(n => n.Id);
+        var turnoutsByNode = layout.Turnouts.ToDictionary(n => n.NodeId);
 
         Edge? bestEdge = null;
         Vector2Double bestProj = default;
@@ -44,8 +45,21 @@ public class LayoutService
 
         foreach (var edge in layout.Edges)
         {
+            var nodeA = nodesById[edge.A];
+            var nodeB = nodesById[edge.B];
             var a = new Vector2Double(nodesById[edge.A].Point.X, nodesById[edge.A].Point.Y);
             var b = new Vector2Double(nodesById[edge.B].Point.X, nodesById[edge.B].Point.Y);
+
+
+            // If we're and the start or end of a path, and the node is a turnout
+            // The end needs moved back a bit so there is clear separation and it doesn’t accidentally get picked up by a train on the turnout. The path is still valid and there could be something on it, there just needs to be a clear separation 
+            var nodeAPath = Paths.FirstOrDefault(p =>
+                p.StartNode.Id == edge.A || p.StartNode.Id == edge.B ||
+                p.EndNode.Id == edge.A || p.EndNode.Id == edge.B);
+            if (turnoutsByNode.ContainsKey(edge.A) && nodeAPath != null)
+            {
+                MoveAlongPath(a, nodeAPath)
+            }
 
             var (proj, t) = ClosestPointOnSegment(a, b, targetPoint);
             double dx = proj.X - targetPoint.X;
@@ -61,9 +75,6 @@ public class LayoutService
             }
         }
 
-        if (bestEdge == null)
-            throw new InvalidOperationException("Cannot project onto a path with no edges.");
-
         var bestNode = bestT <= 0.5 ? nodesById[bestEdge.A] : nodesById[bestEdge.B];
 
         return new ProjectionResult
@@ -75,7 +86,109 @@ public class LayoutService
         };
     }
 
-    private static (Vector2Double point, double t) ClosestPointOnSegment(Vector2Double a, Vector2Double b, Vector2Double p)
+    public ProjectionResult MoveAlongPath(
+        Vector2Int position,
+        TrackPath path,
+        Edge currentEdge,
+        double distance,
+        SeekDirection direction)
+    {
+        if (distance < 0)
+            throw new ArgumentOutOfRangeException(nameof(distance), "Distance must be non-negative.");
+
+        if (path.Edges.Count == 0)
+            throw new InvalidOperationException("Cannot move along an empty path.");
+
+        int edgeIndex = FindEdgeIndex(path, currentEdge);
+        var touchedEdges = new List<Edge> { path.Edges[edgeIndex] };
+        var projectedPosition = new Vector2Double(position.X, position.Y);
+        double remainingDistance = distance;
+
+        while (true)
+        {
+            var edge = path.Edges[edgeIndex];
+            Node fromNode = GetTraversalStartNode(path, edgeIndex, direction);
+            Node toNode = GetTraversalEndNode(path, edgeIndex, direction);
+
+            var fromPoint = new Vector2Double(fromNode.Point.X, fromNode.Point.Y);
+            var toPoint = new Vector2Double(toNode.Point.X, toNode.Point.Y);
+            var (snappedPoint, t) = ClosestPointOnSegment(fromPoint, toPoint, projectedPosition);
+
+            double dx = toPoint.X - fromPoint.X;
+            double dy = toPoint.Y - fromPoint.Y;
+            double edgeLength = Math.Sqrt((dx * dx) + (dy * dy));
+
+            if (edgeLength < 1e-12)
+            {
+                if (IsPathEnd(edgeIndex, path, direction))
+                {
+                    return new ProjectionResult
+                    {
+                        Point = toNode.Point,
+                        Node = toNode,
+                        Edge = edge,
+                        Path = path,
+                        TouchedEdges = touchedEdges,
+                        Distance = distance - remainingDistance,
+                        Direction = direction
+                    };
+                }
+
+                edgeIndex += direction == SeekDirection.Down ? 1 : -1;
+                var nextEdge = path.Edges[edgeIndex];
+                if (!EdgesMatch(touchedEdges[^1], nextEdge))
+                    touchedEdges.Add(nextEdge);
+                projectedPosition = toPoint;
+                continue;
+            }
+
+            double distanceToEdgeEnd = edgeLength * (1.0 - t);
+
+            if (remainingDistance <= distanceToEdgeEnd)
+            {
+                double travelT = t + (remainingDistance / edgeLength);
+                var resultPoint = new Vector2Double(
+                    fromPoint.X + (dx * travelT),
+                    fromPoint.Y + (dy * travelT));
+
+                return new ProjectionResult
+                {
+                    Point = new Vector2Int((int)Math.Round(resultPoint.X), (int)Math.Round(resultPoint.Y)),
+                    Node = GetClosestNode(fromNode, toNode, resultPoint),
+                    Edge = edge,
+                    Path = path,
+                    TouchedEdges = touchedEdges,
+                    Distance = distance,
+                    Direction = direction
+                };
+            }
+
+            remainingDistance -= distanceToEdgeEnd;
+            projectedPosition = toPoint;
+
+            if (IsPathEnd(edgeIndex, path, direction))
+            {
+                return new ProjectionResult
+                {
+                    Point = toNode.Point,
+                    Node = toNode,
+                    Edge = edge,
+                    Path = path,
+                    TouchedEdges = touchedEdges,
+                    Distance = distance - remainingDistance,
+                    Direction = direction
+                };
+            }
+
+            edgeIndex += direction == SeekDirection.Down ? 1 : -1;
+            var nextPathEdge = path.Edges[edgeIndex];
+            if (!EdgesMatch(touchedEdges[^1], nextPathEdge))
+                touchedEdges.Add(nextPathEdge);
+        }
+    }
+
+    private static (Vector2Double point, double t) ClosestPointOnSegment(Vector2Double a, Vector2Double b,
+        Vector2Double p)
     {
         double abX = b.X - a.X;
         double abY = b.Y - a.Y;
@@ -134,7 +247,128 @@ public class LayoutService
         // 2. Trace outward from Node B (Heading "Forward")
         TraceDirection(nodeB, startEdge, pathEdges, visitedEdges, SeekDirection.Up);
 
-        return new TrackPath { Edges = pathEdges.ToList() };
+        var orderedEdges = pathEdges.ToList();
+
+        return new TrackPath
+        {
+            Edges = orderedEdges,
+            StartNode = GetPathStartNode(orderedEdges),
+            EndNode = GetPathEndNode(orderedEdges)
+        };
+    }
+
+    private int FindEdgeIndex(TrackPath path, Edge edge)
+    {
+        int edgeIndex = path.Edges.FindIndex(e => EdgesMatch(e, edge));
+
+        if (edgeIndex < 0)
+            throw new InvalidOperationException("The provided edge is not part of the supplied path.");
+
+        return edgeIndex;
+    }
+
+    private static bool EdgesMatch(Edge left, Edge right)
+    {
+        return (left.A == right.A && left.B == right.B) ||
+               (left.A == right.B && left.B == right.A);
+    }
+
+    private Node GetPathStartNode(List<Edge> edges)
+    {
+        if (edges.Count == 0)
+            throw new InvalidOperationException("Cannot determine the start node of an empty path.");
+
+        if (edges.Count == 1)
+            return layout.Nodes.First(n => n.Id == edges[0].A);
+
+        return GetPathOuterNode(edges[0], edges[1]);
+    }
+
+    private Node GetPathEndNode(List<Edge> edges)
+    {
+        if (edges.Count == 0)
+            throw new InvalidOperationException("Cannot determine the end node of an empty path.");
+
+        if (edges.Count == 1)
+            return layout.Nodes.First(n => n.Id == edges[0].B);
+
+        return GetPathOuterNode(edges[^1], edges[^2]);
+    }
+
+    private Node GetPathOuterNode(Edge edge, Edge adjacent)
+    {
+        Guid sharedNodeId = GetSharedNodeId(edge, adjacent);
+        Guid outerNodeId = edge.A == sharedNodeId ? edge.B : edge.A;
+        return GetNodeById(outerNodeId);
+    }
+
+    private Node GetTraversalStartNode(TrackPath path, int edgeIndex, SeekDirection direction)
+    {
+        return direction == SeekDirection.Down
+            ? GetNodeBeforeEdge(path, edgeIndex)
+            : GetNodeAfterEdge(path, edgeIndex);
+    }
+
+    private Node GetTraversalEndNode(TrackPath path, int edgeIndex, SeekDirection direction)
+    {
+        return direction == SeekDirection.Down
+            ? GetNodeAfterEdge(path, edgeIndex)
+            : GetNodeBeforeEdge(path, edgeIndex);
+    }
+
+    private Node GetNodeBeforeEdge(TrackPath path, int edgeIndex)
+    {
+        if (edgeIndex == 0)
+            return path.StartNode;
+
+        Guid sharedNodeId = GetSharedNodeId(path.Edges[edgeIndex - 1], path.Edges[edgeIndex]);
+        return GetNodeById(sharedNodeId);
+    }
+
+    private Node GetNodeAfterEdge(TrackPath path, int edgeIndex)
+    {
+        if (edgeIndex == path.Edges.Count - 1)
+            return path.EndNode;
+
+        Guid sharedNodeId = GetSharedNodeId(path.Edges[edgeIndex], path.Edges[edgeIndex + 1]);
+        return GetNodeById(sharedNodeId);
+    }
+
+    private bool IsPathEnd(int edgeIndex, TrackPath path, SeekDirection direction)
+    {
+        return direction == SeekDirection.Down
+            ? edgeIndex == path.Edges.Count - 1
+            : edgeIndex == 0;
+    }
+
+    private Guid GetSharedNodeId(Edge first, Edge second)
+    {
+        if (first.A == second.A || first.A == second.B)
+            return first.A;
+
+        if (first.B == second.A || first.B == second.B)
+            return first.B;
+
+        throw new InvalidOperationException("Path edges must be connected.");
+    }
+
+    private Node GetNodeById(Guid nodeId)
+    {
+        return layout.Nodes.First(n => n.Id == nodeId);
+    }
+
+    private static Node GetClosestNode(Node a, Node b, Vector2Double point)
+    {
+        double distToA = DistanceSquared(point, a.Point);
+        double distToB = DistanceSquared(point, b.Point);
+        return distToA <= distToB ? a : b;
+    }
+
+    private static double DistanceSquared(Vector2Double point, Vector2Int target)
+    {
+        double dx = point.X - target.X;
+        double dy = point.Y - target.Y;
+        return (dx * dx) + (dy * dy);
     }
 
     private void TraceDirection(

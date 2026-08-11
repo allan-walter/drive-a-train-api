@@ -59,5 +59,6 @@ public class TurnoutState
 public class TrackPath
 {
     public List<Edge> Edges { get; set; } = new();
-    // public List<Node> Nodes { get; set; } = new(); // Optional, but handy for traversal
+    public Node StartNode { get; set; }
+    public Node EndNode { get; set; }
 }
