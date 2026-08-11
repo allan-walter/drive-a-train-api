@@ -4,19 +4,19 @@ using OpenCvSharp;
 
 namespace DriveATrain.Services.Layout;
 
-public class LayoutDrawingService(LayoutPathService layoutPathService, LayoutService layoutService, Config config)
+public class LayoutDrawingService(LayoutService layoutService, Config config)
 {
     // The paths are highlighted
     // Trainpos highlights the paths the train can access. There could be units parked on inactive routes
     public void DrawLayout(Vector2Int? trainPos, Mat frame)
     {
-        Node? closetNode = trainPos.HasValue ? layoutService.SnapToPath(trainPos.Value).node : null;
+        ProjectionResult? projection = trainPos.HasValue ? layoutService.ProjectOnPath(trainPos.Value) : null;
         // var trainNode = trainPos.HasValue
         //     ? config.Layout.ProjectDistance(closetNode.Value, trainPos.Value, 0)?.Node
         //     : null;
 
-        var highlighted = closetNode.HasValue
-            ? new HashSet<Edge>(layoutPathService.ConnectedEdgesByTurnout(closetNode.Value))
+        var highlighted = projection != null
+            ? new HashSet<Edge>(layoutService.ActivePath(projection.Node))
             : new HashSet<Edge>();
         //
         foreach (var edge in config.Layout.Edges)

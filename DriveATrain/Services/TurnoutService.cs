@@ -9,12 +9,10 @@ public class TurnoutService : IHostedService
     public SerialPort Port;
     private Config config;
     private LayoutService _layoutService;
-    private LayoutPathService _layoutPathService;
 
-    public TurnoutService(Config config, LayoutService layoutService, LayoutPathService layoutPathService)
+    public TurnoutService(Config config, LayoutService layoutService)
     {
         _layoutService = layoutService;
-        _layoutPathService = layoutPathService;
         Port = new SerialPort(config.Turnout.Port, 115200); // change this
         this.config = config;
     }
@@ -52,7 +50,7 @@ public class TurnoutService : IHostedService
         var layoutTurnout = _layoutService.Turnouts.First(t => t.Turnout.Id == turnout.Pin);
         // TODO how to define which way around this is
         layoutTurnout.ActiveRoute = state ? 1 : 0;
-        _layoutPathService.CalculatePathsByTurnout();
+        _layoutService.CalculatePathsByTurnout();
 
         await SendCommand($"{turnout.Pin}{(state ? "f" : "b")}");
     }
@@ -77,7 +75,7 @@ public class TurnoutService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _layoutPathService.CalculatePathsByTurnout();
+        _layoutService.CalculatePathsByTurnout();
 
         return Task.CompletedTask;
     }

@@ -23,7 +23,6 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddSingleton<DccService>();
 builder.Services.AddSingleton<LayoutService>();
-builder.Services.AddSingleton<LayoutPathService>();
 builder.Services.AddSingleton<LayoutDrawingService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DccService>());
 builder.Services.AddSingleton<DetectorService>();
