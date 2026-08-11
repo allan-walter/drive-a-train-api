@@ -432,8 +432,8 @@ public class DetectorService(
 
                 // Cv2.Circle(frame, new Point(best.front.Position.X, best.front.Position.Y), 20, Colors.GREEN);
 
-                var frontPos = layoutService.ProjectOnPath(best.front.Position).Point;
-                var backPos = layoutService.ProjectOnPath(best.back.Position).Point;
+                var frontPos = layoutService.ProjectOnPath(best.front.Position, debugFrame).Point;
+                var backPos = layoutService.ProjectOnPath(best.back.Position, debugFrame).Point;
                 res.Add(new UnitMarkerResponse(frontPos, backPos, marker));
             }
         }

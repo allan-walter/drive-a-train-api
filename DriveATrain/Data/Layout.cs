@@ -24,6 +24,17 @@ public class Edge
 {
     public Guid A { get; set; }
     public Guid B { get; set; }
+
+    // If this edge is the first or last in a path, return the id at the end
+    public Guid? End(TrackPath path)
+    {
+        if (A == path.StartNode.Id)
+            return A;
+        else if (B == path.EndNode.Id)
+            return B;
+
+        return null;
+    }
 }
 
 public class Turnout
@@ -43,7 +54,7 @@ public class TurnoutState
     public TurnoutState(Turnout turnout, List<Edge> routes)
     {
         Turnout = turnout;
-        
+
         if (routes.Count != 3)
             throw new ArgumentException("Currently only 3 point turnouts supported");
 

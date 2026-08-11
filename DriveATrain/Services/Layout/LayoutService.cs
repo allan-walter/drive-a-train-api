@@ -1,5 +1,6 @@
 using DriveATrain.Data;
 using DriveATrain.OpenCv;
+using OpenCvSharp;
 
 namespace DriveATrain.Services.Layout;
 
@@ -32,8 +33,9 @@ public class LayoutService
     // TODO theres kinda a double up between this and the path stuff, but this is needed before calling the path functions
 
     // Returns the node it deemed to be closest (there's a bit more going on than a simple distance check), and the point snapped to the path
-    public ProjectionResult ProjectOnPath(Vector2Int p)
+    public ProjectionResult ProjectOnPath(Vector2Int p, Mat? debugFrame = null)
     {
+        const double turnoutClearance = 30;
         var nodesById = layout.Nodes.ToDictionary(n => n.Id);
         var turnoutsByNode = layout.Turnouts.ToDictionary(n => n.NodeId);
 
@@ -54,11 +56,39 @@ public class LayoutService
             // If we're and the start or end of a path, and the node is a turnout
             // The end needs moved back a bit so there is clear separation and it doesn’t accidentally get picked up by a train on the turnout. The path is still valid and there could be something on it, there just needs to be a clear separation 
             var nodeAPath = Paths.FirstOrDefault(p =>
-                p.StartNode.Id == edge.A || p.StartNode.Id == edge.B ||
-                p.EndNode.Id == edge.A || p.EndNode.Id == edge.B);
+                (p.StartNode.Id == edge.A && EdgesMatch(p.Edges.First(), edge)) ||
+                (p.EndNode.Id == edge.A && EdgesMatch(p.Edges.Last(), edge)));
             if (turnoutsByNode.ContainsKey(edge.A) && nodeAPath != null)
             {
-                MoveAlongPath(a, nodeAPath)
+                ProjectionResult adjustedA = nodeAPath.StartNode.Id == edge.A
+                    ? MoveAlongPath(nodeA.Point, nodeAPath, nodeAPath.Edges.First(), turnoutClearance,
+                        SeekDirection.Down)
+                    : MoveAlongPath(nodeA.Point, nodeAPath, nodeAPath.Edges.Last(), turnoutClearance, SeekDirection.Up);
+
+                a = new Vector2Double(adjustedA.Point.X, adjustedA.Point.Y);
+
+                if (debugFrame != null)
+                {
+                    Cv2.Circle(debugFrame, a.ToInt().ToPoint(), 4, Colors.Cyan, -1);
+                }
+            }
+
+            var nodeBPath = Paths.FirstOrDefault(p =>
+                (p.StartNode.Id == edge.B && EdgesMatch(p.Edges.First(), edge)) ||
+                (p.EndNode.Id == edge.B && EdgesMatch(p.Edges.Last(), edge)));
+            if (turnoutsByNode.ContainsKey(edge.B) && nodeBPath != null)
+            {
+                ProjectionResult adjustedB = nodeBPath.StartNode.Id == edge.B
+                    ? MoveAlongPath(nodeB.Point, nodeBPath, nodeBPath.Edges.First(), turnoutClearance,
+                        SeekDirection.Down)
+                    : MoveAlongPath(nodeB.Point, nodeBPath, nodeBPath.Edges.Last(), turnoutClearance, SeekDirection.Up);
+
+                b = new Vector2Double(adjustedB.Point.X, adjustedB.Point.Y);
+
+                if (debugFrame != null)
+                {
+                    Cv2.Circle(debugFrame, b.ToInt().ToPoint(), 4, Colors.Purple, -1);
+                }
             }
 
             var (proj, t) = ClosestPointOnSegment(a, b, targetPoint);
@@ -206,10 +236,19 @@ public class LayoutService
 
 
     // Active path a given node is on
+    // ACTUALLY ITS THE OPPOSITE
+    //just because a path has a node it deosnt mean its active. if its in the middle yes, but if its at either end, and there is another path with it in the middle we want that on
+    // No this is compeltly fucked
     public List<Edge> ActivePath(Node node)
     {
-        // TODO I dont think this is right, but you can hopefully see what im trying to do
-        return Paths.First(p => p.Edges.Any(e => e.A == node.Id || e.B == node.Id)).Edges;
+        var matchingPaths = Paths
+            .Where(p => p.Edges.Any(e => e.A == node.Id || e.B == node.Id))
+            .ToList();
+
+        var activePath = matchingPaths.FirstOrDefault(p => p.StartNode.Id == node.Id || p.EndNode.Id == node.Id)
+                         ?? matchingPaths.First();
+
+        return activePath.Edges;
     }
 
     // Update the current track state to match the turnout state
