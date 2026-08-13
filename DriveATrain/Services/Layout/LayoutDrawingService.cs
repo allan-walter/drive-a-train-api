@@ -16,7 +16,7 @@ public class LayoutDrawingService(LayoutService layoutService, Config config)
         //     : null;
 
         var highlighted = projection != null
-            ? new HashSet<Edge>(layoutService.ActivePath(projection.Node))
+            ? new HashSet<Edge>(layoutService.Paths.First(p => p.Edges.Contains(projection.Edge)).Edges)
             : new HashSet<Edge>();
         //
         foreach (var edge in config.Layout.Edges)

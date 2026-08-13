@@ -12,6 +12,34 @@ class TrainingFrameCapture
 {
     const int Fps = 30; // match whatever fps your live capture uses
 
+    static void SetCameraControls()
+    {
+        string[] controls =
+        {
+            "white_balance_automatic=0",
+            "white_balance_temperature=4600",
+            "auto_exposure=1",
+            "exposure_time_absolute=250",
+            "focus_automatic_continuous=0",
+            "focus_absolute=0"
+        };
+
+        foreach (var control in controls)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "v4l2-ctl",
+                Arguments = $"-d /dev/video0 -c {control}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var proc = Process.Start(psi);
+            proc.WaitForExit();
+        }
+    }
+    
     static void Main(string[] args)
     {
         var outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DriveATrain",
@@ -35,6 +63,8 @@ class TrainingFrameCapture
         var flip = false;
         var flipFilter = flip ? "-vf hflip " : "";
 
+        // SetCameraControls();
+        
         var psi = new ProcessStartInfo
         {
             FileName = "ffmpeg",

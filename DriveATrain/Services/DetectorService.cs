@@ -47,8 +47,13 @@ public class DetectorService(
         {
             markers = GetMarkerSeeds(processingFrame, debugFrame);
 
+            // TODO, for now its easier to debug just the loco
+            // markers = markers.Where(m => m.Color.SingleColor == LookupColor.Colors[0].SingleColor).ToList();
+
             using var combinedMaskColor =
                 OpenCvHelpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList());
+
+            DebugWindow.Show("noiseRemoval", "result", combinedMaskColor);
 
             combinedMaskBinary = OpenCvHelpers.CombineMasks(markers.Select(m => m.Mask).ToList());
 
@@ -178,7 +183,9 @@ public class DetectorService(
 
         Cv2.GaussianBlur(frame, frame, Blur, 0);
 
+
         using var res = GetDiffMask(frame);
+        // DebugWindow.Show("raw", res.Clone());
 
         // using var color = new Mat();
         // Cv2.CvtColor(res, color, ColorConversionCodes.BGR2BGRA);
@@ -187,20 +194,30 @@ public class DetectorService(
         Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
 
 
+        DebugWindow.Show("noiseRemoval", "step 0", res.Clone());
+        // TODO, even with a perfect background as the train moves the cameras image changes slightly so there will always be small noise to remove
+        // I've tried disabling auto exposer, focus etc with no luck
         // Erosion then dilation, renmove noise
         int openSize = 3; //(int)ResolutionScaler.ScaleKernel(3);
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
 
+        DebugWindow.Show("noiseRemoval", "step 1", res.Clone());
+
         // Dilation then eriosion, fill gaps and join blobs
-        int closeSize = ResolutionScaler.ScaleKernel(30);
+        int closeSize = 15; //ResolutionScaler.ScaleKernel(30);
         using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(closeSize, closeSize));
         Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
 
+        DebugWindow.Show("noiseRemoval", "step 2", res.Clone());
+
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
-        int open2Size = (int)ResolutionScaler.ScaleKernel(15);
+        int open2Size = 5; //(int)ResolutionScaler.ScaleKernel(15);
         using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2);
+
+        DebugWindow.Show("noiseRemoval", "step 3", res.Clone());
+
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
         // A bit of blur so there is more of an average color to find
@@ -240,7 +257,7 @@ public class DetectorService(
                 {
                     // TODO gross but works for now to filter out extra detected stuff. In future when background is not yellow should be easier to only detect one color
                     double area = Cv2.ContourArea(contour);
-                    if (area <= ResolutionScaler.ScaleArea(3000))
+                    if (area <= ResolutionScaler.ScaleArea(500))
                         continue;
 
                     contourMatch = contour;
@@ -293,6 +310,7 @@ public class DetectorService(
 
         const double liveLearningRate = 0.0;
         _mog2.Apply(liveFrame, fgMask, liveLearningRate);
+
 
         var cut = new Mat();
         fgMask.CopyTo(cut, config.Vision.goZone);
@@ -388,12 +406,12 @@ public class DetectorService(
             // Get the cliosertt onem it might be just outside if the mask detection is loose, closets should be fine
             Point2f center = rotatedRect.Center;
 
-            Point? point = dirMarkers
-                .OrderBy(p => Math.Pow(p.X - center.X, 2) + Math.Pow(p.Y - center.Y, 2))
-                .Select(p => (Point?)p)
-                .FirstOrDefault();
-            // Point? point = dirMarkers.FirstOrDefault(p =>
-            //     RectContainsPoint(rotatedRect, p));
+            // Point? point = dirMarkers
+            //     .OrderBy(p => Math.Pow(p.X - center.X, 2) + Math.Pow(p.Y - center.Y, 2))
+            //     .Select(p => (Point?)p)
+            //     .FirstOrDefault();
+            Point? point = dirMarkers.FirstOrDefault(p =>
+                RectContainsPoint(rotatedRect, p));
 
             if (point != null)
             {
@@ -448,6 +466,8 @@ public class DetectorService(
         var colorMasks = new Mat[n];
         var distMaps = new Mat[n];
 
+        // Step 1: for each target color, build a mask of pixels in "frame" that are
+        // within +/- tolerance of that color, then restrict it to the input mask.
         for (int i = 0; i < n; i++)
         {
             var color = targetColors[i];
@@ -460,50 +480,71 @@ public class DetectorService(
                 Math.Min(255, color.Val1 + tolerance),
                 Math.Min(255, color.Val2 + tolerance));
 
+            // Pixels in frame that fall within this color's range
             using var rangeMask = new Mat();
             Cv2.InRange(frame, lower, upper, rangeMask);
 
+            // Keep only the ones that are also inside the original mask
             colorMasks[i] = new Mat();
             Cv2.BitwiseAnd(rangeMask, mask, colorMasks[i]);
+
+            DebugWindow.Show("colorSplit", $"mask_{i} step 0", colorMasks[i].Clone());
+            // var a = new Mat();
+            // frame.CopyTo(a, colorMasks[i]);
+            // DebugWindow.Show("colorSplit", $"mask_{i} color", a.Clone());
         }
 
-        // Step 2: distance transform per color
-        using var inv = new Mat(); // reused across iterations, not reallocated per-i
+        // Step 2: for each color mask, compute a distance transform so that every
+        // pixel knows how far it is from the nearest pixel belonging to that color region.
+        using var inv = new Mat(); // reused scratch buffer, not reallocated per color
         for (int i = 0; i < n; i++)
         {
+            // DistanceTransform measures distance to the nearest ZERO pixel,
+            // so invert the mask first (color region becomes 0, everything else 255)
             Cv2.BitwiseNot(colorMasks[i], inv);
+
             distMaps[i] = new Mat();
             Cv2.DistanceTransform(inv, distMaps[i], DistanceTypes.L2, DistanceTransformMasks.Mask3);
         }
 
-        // Step 3: assign every pixel in the original mask to its nearest color region
+        // Step 3: assign every pixel in the original mask to whichever color region is closest
+
+        // Output mask per color, all starting empty
         var results = Enumerable.Range(0, n)
             .Select(_ => Mat.Zeros(mask.Size(), MatType.CV_8UC1).ToMat())
             .ToList();
 
-        // Running best-distance and best-index maps, same size as mask
+        // Track the smallest distance seen so far per pixel, and which color index achieved it
         using var bestDist = new Mat(mask.Size(), MatType.CV_32FC1, new Scalar(float.MaxValue));
         using var bestIdx = new Mat(mask.Size(), MatType.CV_32SC1, new Scalar(-1));
 
         for (int i = 0; i < n; i++)
         {
-            // where this map beats the current best
+            // Find pixels where this color's distance beats the current best
             using var better = new Mat();
             Cv2.Compare(distMaps[i], bestDist, better, CmpTypes.LT);
 
+            // Update bestDist/bestIdx only at those pixels
             distMaps[i].CopyTo(bestDist, better);
-
             using var idxMat = new Mat(mask.Size(), MatType.CV_32SC1, new Scalar(i));
             idxMat.CopyTo(bestIdx, better);
         }
 
+        // Step 4: build each color's final output mask from the winning indices,
+        // clipped back to the original mask shape
         for (int i = 0; i < n; i++)
         {
             using var isIndex = new Mat();
             Cv2.Compare(bestIdx, new Scalar(i), isIndex, CmpTypes.EQ);
             Cv2.BitwiseAnd(isIndex, mask, results[i]);
+
+            DebugWindow.Show("colorSplit", $"mask_{i} result", results[i].Clone());
+            var a = new Mat();
+            frame.CopyTo(a, results[i]);
+            DebugWindow.Show("colorSplit", $"mask_{i} result color", a.Clone());
         }
 
+        // Cleanup intermediate mats
         foreach (var cm in colorMasks)
             cm?.Dispose();
         foreach (var dm in distMaps)

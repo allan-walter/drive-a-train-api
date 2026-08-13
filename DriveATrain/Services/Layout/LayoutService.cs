@@ -110,6 +110,7 @@ public class LayoutService
         return new ProjectionResult
         {
             Node = bestNode,
+            Edge = bestEdge,
             Point = new Vector2Int((int)Math.Round(bestProj.X), (int)Math.Round(bestProj.Y)),
             Direction = bestT <= 0.5 ? SeekDirection.Up : SeekDirection.Down,
             Distance = Math.Sqrt(bestDistSq)
@@ -232,23 +233,6 @@ public class LayoutService
         double t = Math.Clamp(((apX * abX) + (apY * abY)) / lenSq, 0.0, 1.0);
 
         return (new Vector2Double(a.X + (abX * t), a.Y + (abY * t)), t);
-    }
-
-
-    // Active path a given node is on
-    // ACTUALLY ITS THE OPPOSITE
-    //just because a path has a node it deosnt mean its active. if its in the middle yes, but if its at either end, and there is another path with it in the middle we want that on
-    // No this is compeltly fucked
-    public List<Edge> ActivePath(Node node)
-    {
-        var matchingPaths = Paths
-            .Where(p => p.Edges.Any(e => e.A == node.Id || e.B == node.Id))
-            .ToList();
-
-        var activePath = matchingPaths.FirstOrDefault(p => p.StartNode.Id == node.Id || p.EndNode.Id == node.Id)
-                         ?? matchingPaths.First();
-
-        return activePath.Edges;
     }
 
     // Update the current track state to match the turnout state

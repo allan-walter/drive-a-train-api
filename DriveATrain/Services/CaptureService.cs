@@ -50,6 +50,35 @@ public class CaptureService : IHostedService
         _captureTask = Task.Run(() => Capture(_cts.Token), _cts.Token);
         return Task.CompletedTask;
     }
+    
+    // TODO share with training image generator
+    private void SetCameraControls()
+    {
+        string[] controls =
+        {
+            "white_balance_automatic=0",
+            "white_balance_temperature=4600",
+            "auto_exposure=1",
+            "exposure_time_absolute=250",
+            "focus_automatic_continuous=0",
+            "focus_absolute=0"
+        };
+
+        foreach (var control in controls)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "v4l2-ctl",
+                Arguments = $"-d /dev/video0 -c {control}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var proc = Process.Start(psi);
+            proc.WaitForExit();
+        }
+    }
 
     private void Capture(CancellationToken token)
     {
@@ -74,6 +103,8 @@ public class CaptureService : IHostedService
         }
         else
         {
+            // SetCameraControls();
+            
             psi = new ProcessStartInfo
             {
                 FileName = "ffmpeg",

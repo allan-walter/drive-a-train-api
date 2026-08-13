@@ -15,13 +15,22 @@ public static class DebugWindow
         _uiThread.Start();
     }
 
-    public static void Show(string title, Mat mat)
+    private static List<string> debugCategories =
+    [
+        "colorSplit",
+        // "noiseRemoval"
+    ];
+
+    public static void Show(string category, string title, Mat mat)
     {
+        if (!debugCategories.Contains(category))
+            return;
+
         if (_uiThread == null)
             Start();
-        
+
         // Clone because caller may dispose/reuse the Mat
-        _queue.Add((title, mat.Clone()));
+        _queue.Add(($"{category}_{title}", mat.Clone()));
     }
 
     private static void RunLoop()
