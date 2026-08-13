@@ -8,23 +8,41 @@ namespace DriveATrain.OpenCv;
 // HSV-range based color used for marker lookup/classification.
 public class LookupColor
 {
-    // bgr
+    // HSV (H:0-179, S:0-255, V:0-255)
     public Scalar SingleColor { get; set; }
+    public Scalar Lower { get; set; }
+    public Scalar Upper { get; set; }
 
-    public LookupColor(Scalar singleColor)
+    public LookupColor(Scalar singleColor, int hTol = 10, int sTol = 60, int vTol = 60)
     {
         SingleColor = singleColor;
+        Lower = new Scalar(
+            Math.Max(0, SingleColor.Val0 - hTol),
+            Math.Max(0, SingleColor.Val1 - sTol),
+            Math.Max(0, SingleColor.Val2 - vTol));
+        Upper = new Scalar(
+            Math.Min(179, SingleColor.Val0 + hTol),
+            Math.Min(255, SingleColor.Val1 + sTol),
+            Math.Min(255, SingleColor.Val2 + vTol));
     }
 
     public static readonly List<LookupColor> Colors = new List<LookupColor>
     {
-        // Black (train roof) - actually blue-grey under this lighting
+        // Black (train roof/body) - hue/sat are unreliable this dark,
+        // so use a wide H/S tolerance and rely on a tight, low V ceiling instead.
         new LookupColor(
-            singleColor: new Scalar(0.121 * 255, 0.121 * 255, 0.101 * 255)
+            singleColor: new Scalar(0, 0, 35),
+            hTol: 179, // hue meaningless at low V - accept any hue
+            sTol: 255, // saturation meaningless at low V - accept any sat
+            vTol: 35 // only match dark pixels: V in [0, 70]
         ),
-        // Yellow
+
+        // Yellow (connector block)
         new LookupColor(
-            singleColor: new Scalar(0.288 * 255, 0.467 * 255, 0.567 * 255.0)
+            singleColor: new Scalar(19, 216, 147),
+            hTol: 10,
+            sTol: 60,
+            vTol: 60
         ),
     };
 }

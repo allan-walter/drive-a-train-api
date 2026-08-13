@@ -226,8 +226,7 @@ public class DetectorService(
         blurredFrame.CopyTo(cutout, res);
 
 
-        var colorMasks =
-            SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors.Select(c => c.SingleColor).ToList());
+        var colorMasks = SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors);
 
         var markerDefs = new List<MarkerDef>();
         var keptMasks = new HashSet<Mat>();
@@ -460,8 +459,12 @@ public class DetectorService(
         return res;
     }
 
-    private List<Mat> SplitMaskByNearestColorRegion(Mat frame, Mat mask, List<Scalar> targetColors, int tolerance = 20)
+    // Static so I can use it easily in other project for debugging colors
+    public static List<Mat> SplitMaskByNearestColorRegion(Mat frame, Mat mask, List<LookupColor> targetColors)
     {
+        using var hsv = new Mat();
+        Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
+
         int n = targetColors.Count;
         var colorMasks = new Mat[n];
         var distMaps = new Mat[n];
@@ -471,18 +474,10 @@ public class DetectorService(
         for (int i = 0; i < n; i++)
         {
             var color = targetColors[i];
-            var lower = new Scalar(
-                Math.Max(0, color.Val0 - tolerance),
-                Math.Max(0, color.Val1 - tolerance),
-                Math.Max(0, color.Val2 - tolerance));
-            var upper = new Scalar(
-                Math.Min(255, color.Val0 + tolerance),
-                Math.Min(255, color.Val1 + tolerance),
-                Math.Min(255, color.Val2 + tolerance));
 
             // Pixels in frame that fall within this color's range
             using var rangeMask = new Mat();
-            Cv2.InRange(frame, lower, upper, rangeMask);
+            Cv2.InRange(hsv, color.Lower, color.Upper, rangeMask);
 
             // Keep only the ones that are also inside the original mask
             colorMasks[i] = new Mat();
@@ -538,10 +533,10 @@ public class DetectorService(
             Cv2.Compare(bestIdx, new Scalar(i), isIndex, CmpTypes.EQ);
             Cv2.BitwiseAnd(isIndex, mask, results[i]);
 
-            DebugWindow.Show("colorSplit", $"mask_{i} result", results[i].Clone());
+            // DebugWindow.Show("colorSplit", $"mask_{i} result", results[i].Clone());
             var a = new Mat();
             frame.CopyTo(a, results[i]);
-            DebugWindow.Show("colorSplit", $"mask_{i} result color", a.Clone());
+            // DebugWindow.Show("colorSplit", $"mask_{i} result color", a.Clone());
         }
 
         // Cleanup intermediate mats
