@@ -124,7 +124,7 @@ public class UnitMarkerResponse
     }
 }
 
-public class LiveData
+public struct LiveData
 {
     public List<RailUnitGet> Units { get; set; }
 
@@ -134,6 +134,7 @@ public class LiveData
     public double ReverseValue { get; set; }
 
     public bool PowerOn { get; set; }
+    public List<Uncouple> Connections { get; set; }
 }
 
 // What is returned to the frontend about the detected units

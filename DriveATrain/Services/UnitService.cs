@@ -10,7 +10,7 @@ public class UnitService(IHubContext<UnitHub> unitHub) : IHostedService
     private Task? _task;
 
     private object liveDataLock = new();
-    private LiveData? LiveData { get; set; }
+    private LiveData LiveData { get; set; }
 
     public void SetLiveData(LiveData liveData)
     {
@@ -28,7 +28,7 @@ public class UnitService(IHubContext<UnitHub> unitHub) : IHostedService
 
     private async Task DoWorkAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(200));
 
         try
         {
@@ -41,7 +41,6 @@ public class UnitService(IHubContext<UnitHub> unitHub) : IHostedService
                 }
 
                 await unitHub.Clients.All.SendAsync("units", liveDataSnapshot);
-                // await unitHub.Clients.All.SendAsync("connections", connections);
             }
         }
         catch (OperationCanceledException)

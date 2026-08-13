@@ -106,83 +106,111 @@ public class LayoutService
         }
 
         var bestNode = bestT <= 0.5 ? nodesById[bestEdge.A] : nodesById[bestEdge.B];
+        var bestPath = Paths.First(p => p.Edges.Any(e => EdgesMatch(e, bestEdge)));
 
         return new ProjectionResult
         {
             Node = bestNode,
             Edge = bestEdge,
+            Path = bestPath,
             Point = new Vector2Int((int)Math.Round(bestProj.X), (int)Math.Round(bestProj.Y)),
             Direction = bestT <= 0.5 ? SeekDirection.Up : SeekDirection.Down,
             Distance = Math.Sqrt(bestDistSq)
         };
     }
 
-    public ProjectionResult MoveAlongPath(
+    public SeekDirection GetTravelDirection(ProjectionResult frontProjection, ProjectionResult backProjection)
+    {
+        if (!ReferenceEquals(frontProjection.Path, backProjection.Path))
+            throw new InvalidOperationException("Front and back projections must be on the same path.");
+
+        var path = frontProjection.Path;
+        int frontEdgeIndex = FindEdgeIndex(path, frontProjection.Edge);
+        int backEdgeIndex = FindEdgeIndex(path, backProjection.Edge);
+
+        if (frontEdgeIndex != backEdgeIndex)
+            return frontEdgeIndex > backEdgeIndex ? SeekDirection.Down : SeekDirection.Up;
+
+        Node edgeStart = GetTraversalStartNode(path, frontEdgeIndex, SeekDirection.Down);
+        Node edgeEnd = GetTraversalEndNode(path, frontEdgeIndex, SeekDirection.Down);
+        var startPoint = new Vector2Double(edgeStart.Point.X, edgeStart.Point.Y);
+        var endPoint = new Vector2Double(edgeEnd.Point.X, edgeEnd.Point.Y);
+
+        var (_, frontT) = ClosestPointOnSegment(startPoint, endPoint,
+            new Vector2Double(frontProjection.Point.X, frontProjection.Point.Y));
+        var (_, backT) = ClosestPointOnSegment(startPoint, endPoint,
+            new Vector2Double(backProjection.Point.X, backProjection.Point.Y));
+
+        return frontT >= backT ? SeekDirection.Down : SeekDirection.Up;
+    }
+
+    public MoveProjectionResult MoveAlongPath(
         Vector2Int position,
         TrackPath path,
         Edge currentEdge,
         double distance,
         SeekDirection direction)
     {
+        // Guard against nonsensical input.
         if (distance < 0)
             throw new ArgumentOutOfRangeException(nameof(distance), "Distance must be non-negative.");
 
         if (path.Edges.Count == 0)
             throw new InvalidOperationException("Cannot move along an empty path.");
 
+        // Locate our starting edge within the path and seed the touched-edges list with it.
         int edgeIndex = FindEdgeIndex(path, currentEdge);
         var touchedEdges = new List<Edge> { path.Edges[edgeIndex] };
+
+        // Working position as a double-precision point so we can interpolate along edges.
         var projectedPosition = new Vector2Double(position.X, position.Y);
+
+        // Distance still left to travel; consumed edge-by-edge as we walk the path.
         double remainingDistance = distance;
+
+        // Records the point of the first turnout node we pass through, if any (only the first matters).
+        Vector2Int? passedTurnout = null;
 
         while (true)
         {
             var edge = path.Edges[edgeIndex];
+
+            // Orient the edge according to travel direction: "from" is where we're coming
+            // from on this edge, "to" is where we're heading.
             Node fromNode = GetTraversalStartNode(path, edgeIndex, direction);
             Node toNode = GetTraversalEndNode(path, edgeIndex, direction);
 
             var fromPoint = new Vector2Double(fromNode.Point.X, fromNode.Point.Y);
             var toPoint = new Vector2Double(toNode.Point.X, toNode.Point.Y);
+
+            // Project our current position onto this edge's segment to get a starting
+            // parameter t (0 = at fromNode, 1 = at toNode) to resume traveling from.
             var (snappedPoint, t) = ClosestPointOnSegment(fromPoint, toPoint, projectedPosition);
 
             double dx = toPoint.X - fromPoint.X;
             double dy = toPoint.Y - fromPoint.Y;
             double edgeLength = Math.Sqrt((dx * dx) + (dy * dy));
 
-            if (edgeLength < 1e-12)
+            // We've definitely reached fromNode by this point in the walk (and toNode becomes
+            // the next fromNode later if we continue) — so this is the right place to check
+            // whether fromNode is a turnout. Only the first turnout encountered is recorded.
+            if (!passedTurnout.HasValue && layout.Turnouts.Any(t => t.NodeId == fromNode.Id))
             {
-                if (IsPathEnd(edgeIndex, path, direction))
-                {
-                    return new ProjectionResult
-                    {
-                        Point = toNode.Point,
-                        Node = toNode,
-                        Edge = edge,
-                        Path = path,
-                        TouchedEdges = touchedEdges,
-                        Distance = distance - remainingDistance,
-                        Direction = direction
-                    };
-                }
-
-                edgeIndex += direction == SeekDirection.Down ? 1 : -1;
-                var nextEdge = path.Edges[edgeIndex];
-                if (!EdgesMatch(touchedEdges[^1], nextEdge))
-                    touchedEdges.Add(nextEdge);
-                projectedPosition = toPoint;
-                continue;
+                passedTurnout = fromNode.Point;
             }
 
+            // Distance remaining on this edge from our current parameter t to its end.
             double distanceToEdgeEnd = edgeLength * (1.0 - t);
 
             if (remainingDistance <= distanceToEdgeEnd)
             {
+                // We'll come to rest somewhere within this edge — interpolate to find the point.
                 double travelT = t + (remainingDistance / edgeLength);
                 var resultPoint = new Vector2Double(
                     fromPoint.X + (dx * travelT),
                     fromPoint.Y + (dy * travelT));
 
-                return new ProjectionResult
+                return new MoveProjectionResult // <-- see bug note below: return type mismatch
                 {
                     Point = new Vector2Int((int)Math.Round(resultPoint.X), (int)Math.Round(resultPoint.Y)),
                     Node = GetClosestNode(fromNode, toNode, resultPoint),
@@ -190,16 +218,21 @@ public class LayoutService
                     Path = path,
                     TouchedEdges = touchedEdges,
                     Distance = distance,
-                    Direction = direction
+                    Direction = direction,
+                    ReachedEnd = false
                 };
             }
 
+            // We'll pass all the way through this edge — consume that portion of distance
+            // and carry on to the next edge.
             remainingDistance -= distanceToEdgeEnd;
             projectedPosition = toPoint;
 
             if (IsPathEnd(edgeIndex, path, direction))
             {
-                return new ProjectionResult
+                // Ran out of path before consuming all the requested distance — stop at the
+                // final node and report how far we actually traveled.
+                return new MoveProjectionResult // <-- same return type issue as above
                 {
                     Point = toNode.Point,
                     Node = toNode,
@@ -207,10 +240,12 @@ public class LayoutService
                     Path = path,
                     TouchedEdges = touchedEdges,
                     Distance = distance - remainingDistance,
-                    Direction = direction
+                    Direction = direction,
+                    ReachedEnd = true
                 };
             }
 
+            // Advance to the next edge and record it if it's new.
             edgeIndex += direction == SeekDirection.Down ? 1 : -1;
             var nextPathEdge = path.Edges[edgeIndex];
             if (!EdgesMatch(touchedEdges[^1], nextPathEdge))
@@ -290,7 +325,7 @@ public class LayoutService
         return edgeIndex;
     }
 
-    private static bool EdgesMatch(Edge left, Edge right)
+    public static bool EdgesMatch(Edge left, Edge right)
     {
         return (left.A == right.A && left.B == right.B) ||
                (left.A == right.B && left.B == right.A);
@@ -449,74 +484,6 @@ public class LayoutService
 
         return null; // arrived via an edge not part of the active route — blocked
     }
-
-
-    // Node is needed so it knows what edges to continue down on, it should probably be close the position but doesn' matter too much, TODO what does this do for a unit thats on an inactive path (not reachable by turnout)
-    // public ProjectionResult ProjectDistance(Node pNode, Vector2Int p, double dist)
-    // {
-    //     ProjectionResult? best = null;
-    //     var edges = ConnectedEdgesByTurnout(pNode);
-    //
-    //     // Step one, loop all edges and find the closest one, and out position on that edge
-    //     for (int edgeIndex = 0; edgeIndex < edges.Count; edgeIndex++)
-    //     {
-    //         var edge = edges[edgeIndex];
-    //         var nodeA = layout.Nodes.First(n => n.Id == edge.A);
-    //         var nodeB = layout.Nodes.First(n => n.Id == edge.B);
-    //
-    //         var a = layout.Nodes.First(n => n.Id == edge.A).Point;
-    //         var b = layout.Nodes.First(n => n.Id == edge.B).Point;
-    //
-    //         double dx = b.X - a.X;
-    //         double dy = b.Y - a.Y;
-    //         double lenSq = dx * dx + dy * dy;
-    //
-    //         double t;
-    //         double projX, projY;
-    //
-    //         if (lenSq < 1e-12)
-    //         {
-    //             t = 0;
-    //             projX = a.X;
-    //             projY = a.Y;
-    //         }
-    //         else
-    //         {
-    //             t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / lenSq;
-    //             t = Math.Clamp(t, 0.0, 1.0);
-    //             projX = a.X + t * dx;
-    //             projY = a.Y + t * dy;
-    //         }
-    //
-    //         int roundedX = (int)Math.Round(projX);
-    //         int roundedY = (int)Math.Round(projY);
-    //
-    //         double ddx = roundedX - p.X;
-    //         double ddy = roundedY - p.Y;
-    //         double distSq = ddx * ddx + ddy * ddy;
-    //
-    //         if (best == null || distSq < best.DistanceSq)
-    //         {
-    //             // whichever endpoint the projection landed nearer to (by t) is the closest node on this edge
-    //             var closestNode = t <= 0.5 ? nodeA : nodeB;
-    //
-    //             best = new ProjectionResult
-    //             {
-    //                 Node = closestNode,
-    //                 Point = new Vector2Int(roundedX, roundedY),
-    //                 CurrentEdge = edge,
-    //                 TouchedEdges = new List<Edge> { edge },
-    //                 DistanceSq = distSq
-    //             };
-    //         }
-    //     }
-    //
-    //     if (best == null)
-    //         throw new Exception("Hmmmm");
-    //
-    //
-    //     return best;
-    // }
 }
 
 public class ProjectionResult
@@ -534,6 +501,11 @@ public class ProjectionResult
     public List<Edge> TouchedEdges;
     public double Distance;
     public SeekDirection Direction;
+}
+
+public class MoveProjectionResult : ProjectionResult
+{
+    public bool ReachedEnd;
 }
 
 public enum SeekDirection

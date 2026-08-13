@@ -99,6 +99,8 @@ public class DetectorService(
             // railUnits = RailUnitMocks.GetMocks(config.Units.First(u => u.Type == UnitType.Locomotive),
             //     config.Units.First(u => u.Type == UnitType.Wagon));
 
+            var connections = GetConnections(railUnits);
+
             unitService.SetLiveData(
                 new LiveData
                 {
@@ -106,10 +108,10 @@ public class DetectorService(
                     Forward = dccService.ForwardLimit,
                     // ForwardValue = throttleLimits.Forward,
                     Reverse = dccService.ReverseLimit,
-                    PowerOn = dccService.PowerIsOn
+                    PowerOn = dccService.PowerIsOn,
+                    Connections = connections
                     // ReverseValue = throttleLimits.Reverse,
                 });
-            // GetConnections(railUnits));
 
             lock (captureService.debugOverlayLock)
             {
@@ -250,42 +252,65 @@ public class DetectorService(
 
                 // Start with a blank mask, same size/type as original
                 Mat filteredMask = Mat.Zeros(mask.Size(), mask.Type());
-                Point[] contourMatch = [];
 
-                foreach (var contour in contours)
+                // Its likely (and probably inevitable) that there will be other stuff on the layout that is also detected because its the same color
+                // So for each color (we're alraaddy in a loop doing that), find the contour closest the a point on the defined layout. There shouldnt be a collision on the track
+                // TODO maybe a hard cutoff would be best so if the unit is truely gone we dont default to random objects
+                // Do both, just in case
+                var contour = contours.Select(c =>
                 {
-                    // TODO gross but works for now to filter out extra detected stuff. In future when background is not yellow should be easier to only detect one color
-                    double area = Cv2.ContourArea(contour);
-                    if (area <= ResolutionScaler.ScaleArea(500))
-                        continue;
+                    var contour2f = c.Select(p => new Point(p.X, p.Y)).ToArray();
+                    var rotatedRect = Cv2.MinAreaRect(contour2f);
 
-                    contourMatch = contour;
+                    // Get the 4 corner points
+                    Point2f[] pts = rotatedRect.Points();
+
+// Draw as a closed polygon
+// Yellow for maybe not inclyded ( we jujsut draw overtop later
+                    Cv2.Polylines(debugFrame, new Point[][] { pts.Select(p => p.ToPoint()).ToArray() }, isClosed: true,
+                        color: Colors.Yellow, thickness: 2, lineType: LineTypes.AntiAlias);
 
                     // Draw this contour onto the filtered mask (filled white)
-                    Cv2.FillPoly(filteredMask, new[] { contour }, Scalar.All(255));
+                    Cv2.FillPoly(filteredMask, new[] { c }, Scalar.All(255));
 
-                    // // Overlay drawing (unchanged from before)
-                    // contourOverlay.SetTo(Scalar.All(0));
-                    // Cv2.FillPoly(contourOverlay, [contour], Scalar.Red);
-                    // double alpha = 0.5;
-                    // Cv2.AddWeighted(contourOverlay, alpha, debugFrame, 1 - alpha, 1, debugFrame);
-                }
+                    var center = new Vector2Int(rotatedRect.Center.ToPoint().X, rotatedRect.Center.ToPoint().Y);
+                    var pointOnLayout = layoutService.ProjectOnPath(center);
+
+                    var dist = pointOnLayout.Point.DistanceTo(center);
+
+                    return new { dist = dist, contour = c};
+                })
+                    .Where(d => d.dist < 15)
+                    .OrderBy(a => a.dist)
+                    .FirstOrDefault()?.contour;
+
 
                 // Replace the original mask with the filtered one
                 mask = filteredMask;
 
 
-                keptMasks.Add(mask);
-                markerDefs.Add(new MarkerDef(
-                    -1,
-                    color,
-                    index == 0
-                        ? config.Units.ElementAtOrDefault(0)
-                        : config.Units.ElementAtOrDefault(1),
-                    center.Value.ToPoint(),
-                    mask,
-                    contourMatch
-                ));
+                if (contour != null)
+                {
+                    // Drawa green now we've found the main shape to keep
+                    var contour2f = contour.Select(p => new Point(p.X, p.Y)).ToArray();
+                    var rotatedRect = Cv2.MinAreaRect(contour2f);
+                    Cv2.Polylines(debugFrame, new Point[][] { rotatedRect.Points().Select(p => p.ToPoint()).ToArray() },
+                        isClosed: true,
+                        color: Colors.Green, thickness: 2, lineType: LineTypes.AntiAlias);
+
+
+                    keptMasks.Add(mask);
+                    markerDefs.Add(new MarkerDef(
+                        -1,
+                        color,
+                        index == 0
+                            ? config.Units.ElementAtOrDefault(0)
+                            : config.Units.ElementAtOrDefault(1),
+                        center.Value.ToPoint(),
+                        mask,
+                        contour
+                    ));
+                }
             }
         }
         finally
@@ -334,6 +359,7 @@ public class DetectorService(
         using var cutout = new Mat();
         debug.CopyTo(cutout, mask);
 
+        DebugWindow.Show("dirMarkers", "thresholded", cutout.Clone());
         Point[][] contours = [];
         HierarchyIndex[] hierarchy = [];
         Cv2.FindContours(cutout, out contours, out hierarchy, RetrievalModes.External,
@@ -409,8 +435,21 @@ public class DetectorService(
             //     .OrderBy(p => Math.Pow(p.X - center.X, 2) + Math.Pow(p.Y - center.Y, 2))
             //     .Select(p => (Point?)p)
             //     .FirstOrDefault();
-            Point? point = dirMarkers.FirstOrDefault(p =>
-                RectContainsPoint(rotatedRect, p));
+            Point? point = dirMarkers
+                // groness so the default is null not zero
+                .Select(p => (Point?)p)
+                .FirstOrDefault(p =>
+                    RectContainsPoint(rotatedRect, p.Value));
+
+
+// O
+
+            if (point == null)
+            {
+                // TODO delete, limit handles this properl;y (hopefuly)
+                // so I can debug break without the train driving away
+                // dccService.SetThrottleAsync(new Throttle(0, false, false));
+            }
 
             if (point != null)
             {
@@ -573,49 +612,49 @@ public class DetectorService(
     public List<Uncouple> GetConnections(List<RailUnitGet> railUnits)
     {
         var connections = new List<Uncouple>();
-        // const int maxDist = 100;
-        //
-        // // Flatten every unit's two couplers into one list of (unit, index, position).
-        // var couplers = railUnits
-        //     .SelectMany(u => new[]
-        //     {
-        //         new { Unit = u, Index = u.Def.FrontCouplerIndex, Position = u.Front.Position },
-        //         new { Unit = u, Index = u.Def.BackCouplerIndex, Position = u.Back.Position }
-        //     })
-        //     .ToList();
-        //
-        // foreach (var coupler in couplers)
-        // {
-        //     double bestDist = double.MaxValue;
-        //     RailUnitGet? bestUnit = null;
-        //     int bestIndex = -1;
-        //     object? bestPos = null;
-        //
-        //     foreach (var other in couplers)
-        //     {
-        //         if (other.Unit == coupler.Unit) continue; // skip same unit's own couplers
-        //
-        //         double dist = other.Position.DistanceTo(coupler.Position);
-        //         if (dist <= maxDist && dist < bestDist)
-        //         {
-        //             bestDist = dist;
-        //             bestUnit = other.Unit;
-        //             bestIndex = other.Index;
-        //             bestPos = other.Position;
-        //         }
-        //     }
-        //
-        //     if (bestUnit != null && !connections.Any(c =>
-        //             c.Address == coupler.Unit.Def.Address || c.Address == bestUnit.Def.Address))
-        //     {
-        //         connections.Add(new Uncouple
-        //         {
-        //             Address = coupler.Unit.Def.Address,
-        //             Coupler = coupler.Index,
-        //             Position = GetMidpoint(coupler.Position, (dynamic)bestPos!)
-        //         });
-        //     }
-        // }
+        const int maxDist = 25;
+
+        // Flatten every unit's two couplers into one list of (unit, index, position).
+        var couplers = railUnits
+            .SelectMany(u => new[]
+            {
+                new { Unit = u, Index = u.Def.FrontCouplerIndex, Position = u.Front },
+                new { Unit = u, Index = u.Def.BackCouplerIndex, Position = u.Back }
+            })
+            .ToList();
+
+        foreach (var coupler in couplers)
+        {
+            double bestDist = double.MaxValue;
+            RailUnitGet? bestUnit = null;
+            int bestIndex = -1;
+            object? bestPos = null;
+
+            foreach (var other in couplers)
+            {
+                if (other.Unit == coupler.Unit) continue; // skip same unit's own couplers
+
+                double dist = other.Position.DistanceTo(coupler.Position);
+                if (dist <= maxDist && dist < bestDist)
+                {
+                    bestDist = dist;
+                    bestUnit = other.Unit;
+                    bestIndex = other.Index;
+                    bestPos = other.Position;
+                }
+            }
+
+            if (bestUnit != null && !connections.Any(c =>
+                    c.Address == coupler.Unit.Def.Address || c.Address == bestUnit.Def.Address))
+            {
+                connections.Add(new Uncouple
+                {
+                    Address = coupler.Unit.Def.Address,
+                    Coupler = coupler.Index,
+                    Position = GetMidpoint(coupler.Position, (dynamic)bestPos!)
+                });
+            }
+        }
 
         return connections;
     }

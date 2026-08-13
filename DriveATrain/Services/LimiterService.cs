@@ -1,15 +1,18 @@
 ﻿using DriveATrain.OpenCv;
+using DriveATrain.Services.Layout;
 using OpenCvSharp;
 
 namespace DriveATrain.Services;
 
 public class LimiterService
 {
-    private VisionConfig config;
+    private Config config;
+    private LayoutService _layoutService;
 
-    public LimiterService(Config config)
+    public LimiterService(Config config, LayoutService layoutService)
     {
-        this.config = config.Vision;
+        _layoutService = layoutService;
+        this.config = config;
     }
 
     private SpeedLimit ProcessLimit(Vector2Int pos, Mat debugFrame)
@@ -23,6 +26,26 @@ public class LimiterService
 
         limits.Forward = SpeedLimit.STOP;
         limits.Reverse = SpeedLimit.STOP;
+
+        var frontProjection = _layoutService.ProjectOnPath(front);
+        var backProjection = _layoutService.ProjectOnPath(back);
+        var direction = _layoutService.GetTravelDirection(frontProjection, backProjection);
+        var frontStopProjection = _layoutService.MoveAlongPath(frontProjection.Point, frontProjection.Path,
+            frontProjection.Edge, config.Vision.StopWhenPixelsLessThan, direction);
+
+        if (frontStopProjection.ReachedEnd)
+        {
+            Cv2.Circle(debugFrame, frontStopProjection.Point.ToPoint(), 3, Colors.Red, -1);
+            limits.Forward = SpeedLimit.STOP;
+        }
+        else
+        {
+            Cv2.Circle(debugFrame, frontStopProjection.Point.ToPoint(), 2, Colors.Orange, -1);
+            limits = 
+        }
+
+        // "Turnouts" arnt some different concept. with parts right, turnouts is just the reason a path may end.
+
 
         // var point = pathProjector.Project(front.Position.ToLayoutPoint());
         //
