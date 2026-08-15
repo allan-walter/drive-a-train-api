@@ -26,24 +26,28 @@ public class LookupColor
             Math.Min(255, SingleColor.Val2 + vTol));
     }
 
-    public static readonly List<LookupColor> Colors = new List<LookupColor>
-    {
-        // Black (train roof/body) - hue/sat are unreliable this dark,
-        // so use a wide H/S tolerance and rely on a tight, low V ceiling instead.
-        new LookupColor(
-            singleColor: new Scalar(0, 0, 35),
-            hTol: 179, // hue meaningless at low V - accept any hue
-            sTol: 255, // saturation meaningless at low V - accept any sat
-            vTol: 35 // only match dark pixels: V in [0, 70]
-        ),
+    // Black (train roof/body) - hue/sat are unreliable this dark,
+    // so use a wide H/S tolerance and rely on a tight, low V ceiling instead.
+    public static LookupColor UnitBlack = new LookupColor(
+        singleColor: new Scalar(0, 0, 35),
+        hTol: 179, // hue meaningless at low V - accept any hue
+        sTol: 255, // saturation meaningless at low V - accept any sat
+        vTol: 35 // only match dark pixels: V in [0, 70]
+    );
 
+    public static LookupColor UnitYellow =
         // Yellow (connector block)
         new LookupColor(
             singleColor: new Scalar(19, 216, 147),
             hTol: 10,
             sTol: 60,
             vTol: 60
-        ),
+        );
+
+    public static readonly List<LookupColor> Colors = new List<LookupColor>
+    {
+        UnitBlack,
+        UnitYellow
     };
 }
 

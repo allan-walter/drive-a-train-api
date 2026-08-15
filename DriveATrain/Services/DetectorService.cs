@@ -29,7 +29,7 @@ public class DetectorService(
     private List<Uncouple>? _pendingConnections;
     private int _publishScheduled;
 
-    public void Process(Mat frame)
+    public async Task Process(Mat frame)
     {
         using var processingFrame = new Mat();
         Cv2.Resize(frame, processingFrame,
@@ -46,15 +46,13 @@ public class DetectorService(
         using Mat combinedMaskBinaryFullRes = new Mat();
         try
         {
-            markers = GetMarkerSeeds(processingFrame, debugFrame);
+            markers = await GetMarkerSeeds(processingFrame, debugFrame);
 
             // TODO, for now its easier to debug just the loco
             // markers = markers.Where(m => m.Color.SingleColor == LookupColor.Colors[0].SingleColor).ToList();
 
             using var combinedMaskColor =
                 OpenCvHelpers.CombineMasksColor(markers.Select(m => (m.Mask, m.Color)).ToList());
-
-            DebugWindow.Show("noiseRemoval", "result", combinedMaskColor);
 
             combinedMaskBinary = OpenCvHelpers.CombineMasks(markers.Select(m => m.Mask).ToList());
 
@@ -79,7 +77,7 @@ public class DetectorService(
             var center = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive)?.Center;
 
             // TODO for debugging
-            center = unitService.DebugPointer.Position;
+            // center = unitService.DebugPointer.Position;
 
             layoutDrawingService.DrawLayout(center, debugFrame);
             layoutDrawingService.DrawUnits(debugFrame, units);
@@ -185,7 +183,7 @@ public class DetectorService(
     }
 
     // Doesn't throw any exceptions, may return empty list
-    private List<MarkerDef> GetMarkerSeeds(Mat frame, Mat debugFrame)
+    private async Task<List<MarkerDef>> GetMarkerSeeds(Mat frame, Mat debugFrame)
     {
         // // Debug the go zone
         // double goZoneAlpha = 0.2;
@@ -206,7 +204,7 @@ public class DetectorService(
         Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
 
 
-        DebugWindow.Show("noiseRemoval", "step 0", res.Clone());
+        DebugWindow.Show("noiseRemoval", "step 0", res);
         // TODO, even with a perfect background as the train moves the cameras image changes slightly so there will always be small noise to remove
         // I've tried disabling auto exposer, focus etc with no luck
         // Erosion then dilation, renmove noise
@@ -214,21 +212,28 @@ public class DetectorService(
         using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
 
-        DebugWindow.Show("noiseRemoval", "step 1", res.Clone());
+        DebugWindow.Show("noiseRemoval", "step 1", res);
 
         // Dilation then eriosion, fill gaps and join blobs
         int closeSize = 15; //ResolutionScaler.ScaleKernel(30);
         using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(closeSize, closeSize));
         Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
 
-        DebugWindow.Show("noiseRemoval", "step 2", res.Clone());
+        DebugWindow.Show("noiseRemoval", "step 2", res);
 
         // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
         int open2Size = 5; //(int)ResolutionScaler.ScaleKernel(15);
         using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
         Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2);
 
-        DebugWindow.Show("noiseRemoval", "step 3", res.Clone());
+        DebugWindow.Show("noiseRemoval", "step 3", res);
+
+        // Finally, join what remains back togfether, the last stop removes a lot, and sometimes seperates things
+        int close2Size = 5; //(int)ResolutionScaler.ScaleKernel(15);
+        using var kernalClose2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(close2Size, close2Size));
+        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernalClose2);
+        
+        DebugWindow.Show("noiseRemoval", "step 4", res);
 
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
@@ -247,7 +252,7 @@ public class DetectorService(
         {
             for (int index = 0; index < colorMasks.Count; index++)
             {
-                var mask = colorMasks[index];
+                var mask = colorMasks[index].mat;
 
                 var color = LookupColor.Colors[index];
 
@@ -263,7 +268,8 @@ public class DetectorService(
                 // Do both, just in case
                 // TODO re-comment
                 // Check that the detected blob is on the track path, and also that the area kinda resembles a unit, in case we do detect small stuff on the tracks
-                var contour = contours.Select(c =>
+                // Its liely there is someting of a valid area in the sceneery but the distance check should filter it out
+                var contourInfo = contours.Select(c =>
                     {
                         var area = Cv2.ContourArea(c);
                         var rotatedRect = Cv2.MinAreaRect(c.Select(p => new Point(p.X, p.Y)).ToArray());
@@ -287,19 +293,31 @@ public class DetectorService(
 
                         return new { dist = dist, area = area, rect = rotatedRect, shape = c };
                     })
-                    .Where(d => d.dist < 15)
                     .OrderBy(a => a.dist)
-                    .FirstOrDefault();
+                    .ToList();
+
+                var validContours = contourInfo
+                    .Where(d => d.dist < 15 && d.area > 250)
+                    .ToList();
+
+                // TODO DEbugging
+                if (colorMasks[index].color == LookupColor.UnitBlack && validContours.Count != 1)
+                {
+                    await dccService.SetThrottleAsync(new Throttle(0, false, false));
+                    // Debugger.Break();
+                }
+
+                var unitContour = validContours.FirstOrDefault();
 
 
                 // Replace the original mask with the filtered one
                 mask = filteredMask;
 
-                if (contour != null)
+                if (unitContour != null)
                 {
                     // Draw green now we've found the main shape to keep
                     Cv2.Polylines(debugFrame,
-                        new Point[][] { contour.rect.Points().Select(p => p.ToPoint()).ToArray() },
+                        new Point[][] { unitContour.rect.Points().Select(p => p.ToPoint()).ToArray() },
                         isClosed: true,
                         color: Colors.Green, thickness: 2, lineType: LineTypes.AntiAlias);
 
@@ -311,7 +329,7 @@ public class DetectorService(
                             ? config.Units.ElementAtOrDefault(0)
                             : config.Units.ElementAtOrDefault(1),
                         mask,
-                        contour.shape
+                        unitContour.shape
                     ));
                 }
             }
@@ -320,8 +338,8 @@ public class DetectorService(
         {
             foreach (var mask in colorMasks)
             {
-                if (!keptMasks.Contains(mask))
-                    mask.Dispose();
+                if (!keptMasks.Contains(mask.mat))
+                    mask.mat.Dispose();
             }
         }
 
@@ -362,7 +380,7 @@ public class DetectorService(
         using var cutout = new Mat();
         debug.CopyTo(cutout, mask);
 
-        DebugWindow.Show("dirMarkers", "thresholded", cutout.Clone());
+        DebugWindow.Show("dirMarkers", "thresholded", cutout);
         Point[][] contours = [];
         HierarchyIndex[] hierarchy = [];
         Cv2.FindContours(cutout, out contours, out hierarchy, RetrievalModes.External,
@@ -503,7 +521,8 @@ public class DetectorService(
 
     // Static so I can use it easily in other project for debugging colors
     // Doesn't throw any exceptions, may return empty list
-    public static List<Mat> SplitMaskByNearestColorRegion(Mat frame, Mat mask, List<LookupColor> targetColors)
+    public static List<(Mat mat, LookupColor color)> SplitMaskByNearestColorRegion(Mat frame, Mat mask,
+        List<LookupColor> targetColors)
     {
         using var hsv = new Mat();
         Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
@@ -526,7 +545,7 @@ public class DetectorService(
             colorMasks[i] = new Mat();
             Cv2.BitwiseAnd(rangeMask, mask, colorMasks[i]);
 
-            DebugWindow.Show("colorSplit", $"mask_{i} step 0", colorMasks[i].Clone());
+            DebugWindow.Show("colorSplit", $"mask_{i} step 0", colorMasks[i]);
             // var a = new Mat();
             // frame.CopyTo(a, colorMasks[i]);
             // DebugWindow.Show("colorSplit", $"mask_{i} color", a.Clone());
@@ -549,7 +568,7 @@ public class DetectorService(
 
         // Output mask per color, all starting empty
         var results = Enumerable.Range(0, n)
-            .Select(_ => Mat.Zeros(mask.Size(), MatType.CV_8UC1).ToMat())
+            .Select(i => (Mat.Zeros(mask.Size(), MatType.CV_8UC1).ToMat(), targetColors[i]))
             .ToList();
 
         // Track the smallest distance seen so far per pixel, and which color index achieved it
@@ -574,11 +593,11 @@ public class DetectorService(
         {
             using var isIndex = new Mat();
             Cv2.Compare(bestIdx, new Scalar(i), isIndex, CmpTypes.EQ);
-            Cv2.BitwiseAnd(isIndex, mask, results[i]);
+            Cv2.BitwiseAnd(isIndex, mask, results[i].Item1);
 
             // DebugWindow.Show("colorSplit", $"mask_{i} result", results[i].Clone());
             var a = new Mat();
-            frame.CopyTo(a, results[i]);
+            frame.CopyTo(a, results[i].Item1);
             // DebugWindow.Show("colorSplit", $"mask_{i} result color", a.Clone());
         }
 
@@ -673,7 +692,7 @@ public class DetectorService(
             "Training Images");
         TrainFromDirectory(outputDir);
 
-        processLoop = Task.Run(() =>
+        processLoop = Task.Run(async () =>
         {
             using var frame = new Mat();
 
@@ -681,7 +700,8 @@ public class DetectorService(
             {
                 if (captureService.TryGetLatestFrame(frame))
                 {
-                    Process(frame);
+                    await Task.Delay(100);
+                    // await Process(frame);
                 }
             }
         }, cancellationToken);

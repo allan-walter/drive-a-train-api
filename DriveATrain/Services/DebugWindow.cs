@@ -19,10 +19,10 @@ public static class DebugWindow
     [
         // "colorSplit",
         // "dirMarkers"
-        // "noiseRemoval"
+        "noiseRemoval"
     ];
 
-    // TODO does the clonned mat given to this cause a memory leak?
+    // do NOT call clone, this method internally clones again and if you do that it'll never get disposed of
     public static void Show(string category, string title, Mat mat)
     {
         if (!debugCategories.Contains(category))
@@ -39,7 +39,6 @@ public static class DebugWindow
     {
         while (true)
         {
-            // Drain whatever's queued, keep only latest per window name
             while (_queue.TryTake(out var item, 10))
             {
                 if (_latest.TryGetValue(item.Name, out var old)) old.Dispose();
@@ -48,8 +47,8 @@ public static class DebugWindow
 
             foreach (var kv in _latest)
                 Cv2.ImShow(kv.Key, kv.Value);
-
-            Cv2.WaitKey(1); // required to pump window messages / repaint
+            if (_latest.Count > 0)
+                Cv2.WaitKey(1); // just pump messages, don't touch the Mats
         }
     }
 }
