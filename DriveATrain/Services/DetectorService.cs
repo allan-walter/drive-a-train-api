@@ -184,7 +184,8 @@ public class DetectorService(
         return first ?? throw new Exception("No frames were trained.");
     }
 
-    public List<MarkerDef> GetMarkerSeeds(Mat frame, Mat debugFrame)
+    // Doesn't throw any exceptions, may return empty list
+    private List<MarkerDef> GetMarkerSeeds(Mat frame, Mat debugFrame)
     {
         // // Debug the go zone
         // double goZoneAlpha = 0.2;
@@ -509,6 +510,7 @@ public class DetectorService(
     }
 
     // Static so I can use it easily in other project for debugging colors
+    // Doesn't throw any exceptions, may return empty list
     public static List<Mat> SplitMaskByNearestColorRegion(Mat frame, Mat mask, List<LookupColor> targetColors)
     {
         using var hsv = new Mat();

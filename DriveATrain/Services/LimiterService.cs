@@ -15,25 +15,25 @@ public class LimiterService
         this.config = config;
     }
 
-    private SpeedLimit ProcessLimit(Vector2Int pos, Mat debugFrame)
-    {
-        return SpeedLimit.NORMAL;
-    }
-
     private (MoveProjectionResult frontCollision, MoveProjectionResult backCollision)? Projection(Vector2Int front,
         Vector2Int back, int dist)
     {
         var frontProjection = _layoutService.ProjectOnPath(front);
         var backProjection = _layoutService.ProjectOnPath(back);
+
+
+        if (!ReferenceEquals(frontProjection.Path, backProjection.Path))
+        {
+            // TODO this shouldn't physically be possible but something wrong wtih detection means it does happen
+            return null;
+        }
+
         var direction = _layoutService.GetTravelDirection(frontProjection, backProjection);
 
-        if (!direction.HasValue)
-            return null;
-
         var collisionFrontProjection = _layoutService.MoveAlongPath(frontProjection.Point, frontProjection.Path,
-            frontProjection.Edge, dist, direction.Value);
+            frontProjection.Edge, dist, direction);
 
-        // Frlip because its backjwards
+        // Flip because it's reverse
         var collisionBackProjection = _layoutService.MoveAlongPath(backProjection.Point, backProjection.Path,
             backProjection.Edge, dist, direction == SeekDirection.Down ? SeekDirection.Up : SeekDirection.Down);
 
