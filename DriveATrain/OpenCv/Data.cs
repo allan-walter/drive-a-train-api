@@ -88,20 +88,17 @@ public class MarkerDef
     public LookupColor Color { get; set; }
     public UnitDefinition? Unit { get; set; }
 
-    public Point Center { get; set; }
-
     // Convex, clean but might include slightly too much
     public Mat Mask { get; set; }
 
     // Should really only be one
     public Point[] Contour { get; set; }
 
-    public MarkerDef(int componentId, LookupColor color, UnitDefinition? unit, Point center, Mat mask, Point[] contour)
+    public MarkerDef(int componentId, LookupColor color, UnitDefinition? unit, Mat mask, Point[] contour)
     {
         ComponentId = componentId;
         Color = color;
         Unit = unit;
-        Center = center;
         Mask = mask;
         Contour = contour;
     }

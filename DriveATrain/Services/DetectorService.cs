@@ -80,7 +80,7 @@ public class DetectorService(
 
             // TODO for debugging
             center = unitService.DebugPointer.Position;
-            
+
             layoutDrawingService.DrawLayout(center, debugFrame);
             layoutDrawingService.DrawUnits(debugFrame, units);
 
@@ -249,13 +249,7 @@ public class DetectorService(
             {
                 var mask = colorMasks[index];
 
-                var center = GetCenterOfShape(mask);
                 var color = LookupColor.Colors[index];
-
-                // No shape for this color this frame; skip before allocating filteredMask.
-                // The original colorMasks[index] is disposed in the finally block below.
-                if (center == null)
-                    continue;
 
                 Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
                     RetrievalModes.External, ContourApproximationModes.ApproxSimple);
@@ -267,48 +261,47 @@ public class DetectorService(
                 // So for each color (we're alraaddy in a loop doing that), find the contour closest the a point on the defined layout. There shouldnt be a collision on the track
                 // TODO maybe a hard cutoff would be best so if the unit is truely gone we dont default to random objects
                 // Do both, just in case
+                // TODO re-comment
+                // Check that the detected blob is on the track path, and also that the area kinda resembles a unit, in case we do detect small stuff on the tracks
                 var contour = contours.Select(c =>
                     {
-                        var contour2f = c.Select(p => new Point(p.X, p.Y)).ToArray();
-                        var rotatedRect = Cv2.MinAreaRect(contour2f);
+                        var area = Cv2.ContourArea(c);
+                        var rotatedRect = Cv2.MinAreaRect(c.Select(p => new Point(p.X, p.Y)).ToArray());
 
                         // Get the 4 corner points
                         Point2f[] pts = rotatedRect.Points();
 
-// Draw as a closed polygon
-// Yellow for maybe not inclyded ( we jujsut draw overtop later
+                        // Draw as a closed polygon
+                        // Yellow for maybe, if we decide to keep it it's just drawn over later in green
                         Cv2.Polylines(debugFrame, new Point[][] { pts.Select(p => p.ToPoint()).ToArray() },
                             isClosed: true,
                             color: Colors.Yellow, thickness: 2, lineType: LineTypes.AntiAlias);
 
                         // Draw this contour onto the filtered mask (filled white)
-                        Cv2.FillPoly(filteredMask, new[] { c }, Scalar.All(255));
+                        Cv2.FillPoly(filteredMask, new[] { c }, Colors.White);
 
                         var center = new Vector2Int(rotatedRect.Center.ToPoint().X, rotatedRect.Center.ToPoint().Y);
                         var pointOnLayout = layoutService.ProjectOnPath(center);
 
                         var dist = pointOnLayout.Point.DistanceTo(center);
 
-                        return new { dist = dist, contour = c };
+                        return new { dist = dist, area = area, rect = rotatedRect, shape = c };
                     })
                     .Where(d => d.dist < 15)
                     .OrderBy(a => a.dist)
-                    .FirstOrDefault()?.contour;
+                    .FirstOrDefault();
 
 
                 // Replace the original mask with the filtered one
                 mask = filteredMask;
 
-
                 if (contour != null)
                 {
-                    // Drawa green now we've found the main shape to keep
-                    var contour2f = contour.Select(p => new Point(p.X, p.Y)).ToArray();
-                    var rotatedRect = Cv2.MinAreaRect(contour2f);
-                    Cv2.Polylines(debugFrame, new Point[][] { rotatedRect.Points().Select(p => p.ToPoint()).ToArray() },
+                    // Draw green now we've found the main shape to keep
+                    Cv2.Polylines(debugFrame,
+                        new Point[][] { contour.rect.Points().Select(p => p.ToPoint()).ToArray() },
                         isClosed: true,
                         color: Colors.Green, thickness: 2, lineType: LineTypes.AntiAlias);
-
 
                     keptMasks.Add(mask);
                     markerDefs.Add(new MarkerDef(
@@ -317,9 +310,8 @@ public class DetectorService(
                         index == 0
                             ? config.Units.ElementAtOrDefault(0)
                             : config.Units.ElementAtOrDefault(1),
-                        center.Value.ToPoint(),
                         mask,
-                        contour
+                        contour.shape
                     ));
                 }
             }
@@ -597,14 +589,6 @@ public class DetectorService(
             dm?.Dispose();
 
         return results;
-    }
-
-    private Point2f? GetCenterOfShape(Mat mask)
-    {
-        var moments = Cv2.Moments(mask, true);
-        if (moments.M00 == 0) return null;
-
-        return new Point2f((float)(moments.M10 / moments.M00), (float)(moments.M01 / moments.M00));
     }
 
     private static bool RectContainsPoint(RotatedRect rect, Point2f p)

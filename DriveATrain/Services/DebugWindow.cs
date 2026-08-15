@@ -22,6 +22,7 @@ public static class DebugWindow
         // "noiseRemoval"
     ];
 
+    // TODO does the clonned mat given to this cause a memory leak?
     public static void Show(string category, string title, Mat mat)
     {
         if (!debugCategories.Contains(category))
