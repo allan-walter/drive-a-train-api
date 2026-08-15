@@ -166,10 +166,10 @@ using (var scope = app.Services.CreateScope())
 
 var dccService = app.Services.GetRequiredService<DccService>();
 
-AppDomain.CurrentDomain.FirstChanceException += (sender, e) =>
-{
-    dccService.PowerOff();
-};
+// AppDomain.CurrentDomain.FirstChanceException += (sender, e) =>
+// {
+//     dccService.PowerOff();
+// };
 
 app.Run();
 

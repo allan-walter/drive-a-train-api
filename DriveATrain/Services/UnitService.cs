@@ -12,6 +12,8 @@ public class UnitService(IHubContext<UnitHub> unitHub) : IHostedService
     private object liveDataLock = new();
     private LiveData LiveData { get; set; }
 
+    public DebugPointer DebugPointer { get; set; } = new DebugPointer();
+
     public void SetLiveData(LiveData liveData)
     {
         lock (liveDataLock)

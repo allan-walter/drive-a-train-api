@@ -41,6 +41,7 @@ public class DetectorService(
             new Scalar(0, 0, 0, 0));
         List<MarkerDef>? markers = null;
 
+
         Mat combinedMaskBinary = null;
         using Mat combinedMaskBinaryFullRes = new Mat();
         try
@@ -75,9 +76,12 @@ public class DetectorService(
             var dirMarkers = IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinaryFullRes);
             // var dirMarkers = new List<Point>();
             var units = CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers);
+            var center = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive)?.Center;
 
-            layoutDrawingService.DrawLayout(
-                units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive)?.Center, debugFrame);
+            // TODO for debugging
+            center = unitService.DebugPointer.Position;
+            
+            layoutDrawingService.DrawLayout(center, debugFrame);
             layoutDrawingService.DrawUnits(debugFrame, units);
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
@@ -87,10 +91,10 @@ public class DetectorService(
             {
                 limits = limiterService.ProcessLimits(processingFrame, train.Front, train.Back, debugFrame);
             }
-            
+
             dccService.SetLimits(limits.Forward, limits.Reverse);
             var throttleLimits = dccService.GetThrottleLimits();
-            
+
             var railUnits = units.Select(u => new RailUnitGet(u)).ToList();
 
             // var railUnits = new List<RailUnitGet>();
@@ -111,6 +115,8 @@ public class DetectorService(
                     ReverseLimitValue = throttleLimits.Reverse,
                 });
 
+            ExtraDebugInfo(debugFrame);
+
             lock (captureService.debugOverlayLock)
             {
                 debugFrame.CopyTo(captureService.debugOverlayFrame);
@@ -126,6 +132,11 @@ public class DetectorService(
 
             combinedMaskBinary?.Dispose();
         }
+    }
+
+    void ExtraDebugInfo(Mat debugFrame)
+    {
+        Cv2.Circle(debugFrame, unitService.DebugPointer.Position.ToPoint(), 3, Colors.Magenta, -1);
     }
 
     public Mat TrainFromDirectory(string directoryPath)

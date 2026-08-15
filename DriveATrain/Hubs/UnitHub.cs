@@ -1,9 +1,10 @@
-﻿using DriveATrain.Services;
+﻿using DriveATrain.OpenCv;
+using DriveATrain.Services;
 using Microsoft.AspNetCore.SignalR;
 
 namespace DriveATrain.Hubs;
 
-public class UnitHub(DccService dccService, TurnoutService turnoutService) : Hub
+public class UnitHub(DccService dccService, UnitService unitService, TurnoutService turnoutService) : Hub
 {
     public override Task OnConnectedAsync()
     {
@@ -39,6 +40,16 @@ public class UnitHub(DccService dccService, TurnoutService turnoutService) : Hub
         throw new InvalidOperationException("definitly caugght");
         // await turnoutService.Debug(debugTurnout);
     }
+
+    public async Task DebugPointer(DebugPointer debugPointer)
+    {
+        unitService.DebugPointer = debugPointer;
+    }
+}
+
+public class DebugPointer
+{
+    public Vector2Int Position { get; set; }
 }
 
 public class DebugTurnout

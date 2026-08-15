@@ -43,7 +43,8 @@ public class PovVideoService : IHostedService
         var psi = new ProcessStartInfo
         {
             // FileName = "ffmpeg", // Ensure ffmpeg is in system PATH or use full path like @"C:\ffmpeg\bin\ffmpeg.exe"
-            FileName = "/usr/bin/ffmpeg", 
+            // Otherwise it can't access streams on the network somehow
+            FileName = OperatingSystem.IsLinux() ? "/usr/bin/ffmpeg" : "ffmpeg",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -117,7 +118,7 @@ public class PovVideoService : IHostedService
             {
                 var line = await reader.ReadLineAsync(token);
                 if (line == null) break;
-                
+
                 Debug.WriteLine($"[POV FFMPEG] {line}");
             }
         }
