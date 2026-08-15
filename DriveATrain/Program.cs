@@ -164,6 +164,13 @@ using (var scope = app.Services.CreateScope())
     await SeedAsync(userManager, roleManager);
 }
 
+var dccService = app.Services.GetRequiredService<DccService>();
+
+AppDomain.CurrentDomain.FirstChanceException += (sender, e) =>
+{
+    dccService.PowerOff();
+};
+
 app.Run();
 
 static async Task SeedAsync(UserManager<IdentityUser> userManager, RoleManager<IdentityRole> roleManager)

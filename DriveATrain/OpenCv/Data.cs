@@ -129,9 +129,9 @@ public struct LiveData
     public List<RailUnitGet> Units { get; set; }
 
     public SpeedLimit Forward { get; set; }
-    public double ForwardValue { get; set; }
+    public double ForwardLimitValue { get; set; }
     public SpeedLimit Reverse { get; set; }
-    public double ReverseValue { get; set; }
+    public double ReverseLimitValue { get; set; }
 
     public bool PowerOn { get; set; }
     public List<Uncouple> Connections { get; set; }

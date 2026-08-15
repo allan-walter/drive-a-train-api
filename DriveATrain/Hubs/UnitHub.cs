@@ -32,7 +32,12 @@ public class UnitHub(DccService dccService, TurnoutService turnoutService) : Hub
 
     public async Task DebugTurnout(DebugTurnout debugTurnout)
     {
-        await turnoutService.Debug(debugTurnout);
+        // throw new FormatException("Does this get cauise");
+        // Some eceptions actualy break rider, others happen quietly, either way poweroff if it happens since the video feed might be errored and the train needs to stop
+        // TODO don't actually know what is best to do here. if the limit stuff still works itll sto0p the train, but if riders on a breakpoint nothing will stop it
+        // Maybe its needed during dev but not production?
+        throw new InvalidOperationException("definitly caugght");
+        // await turnoutService.Debug(debugTurnout);
     }
 }
 

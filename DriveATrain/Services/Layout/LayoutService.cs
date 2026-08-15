@@ -119,10 +119,14 @@ public class LayoutService
         };
     }
 
-    public SeekDirection GetTravelDirection(ProjectionResult frontProjection, ProjectionResult backProjection)
+    public SeekDirection? GetTravelDirection(ProjectionResult frontProjection, ProjectionResult backProjection)
     {
         if (!ReferenceEquals(frontProjection.Path, backProjection.Path))
-            throw new InvalidOperationException("Front and back projections must be on the same path.");
+        {
+            return null;
+
+            // throw new InvalidOperationException("Front and back projections must be on the same path.");
+        }
 
         var path = frontProjection.Path;
         int frontEdgeIndex = FindEdgeIndex(path, frontProjection.Edge);

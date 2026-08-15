@@ -20,114 +20,67 @@ public class LimiterService
         return SpeedLimit.NORMAL;
     }
 
+    private (MoveProjectionResult frontCollision, MoveProjectionResult backCollision)? Projection(Vector2Int front,
+        Vector2Int back, int dist)
+    {
+        var frontProjection = _layoutService.ProjectOnPath(front);
+        var backProjection = _layoutService.ProjectOnPath(back);
+        var direction = _layoutService.GetTravelDirection(frontProjection, backProjection);
+
+        if (!direction.HasValue)
+            return null;
+
+        var collisionFrontProjection = _layoutService.MoveAlongPath(frontProjection.Point, frontProjection.Path,
+            frontProjection.Edge, dist, direction.Value);
+
+        // Frlip because its backjwards
+        var collisionBackProjection = _layoutService.MoveAlongPath(backProjection.Point, backProjection.Path,
+            backProjection.Edge, dist, direction == SeekDirection.Down ? SeekDirection.Up : SeekDirection.Down);
+
+        return (collisionFrontProjection, collisionBackProjection);
+    }
+
     public SpeedResult ProcessLimits(Mat frame, Vector2Int front, Vector2Int back, Mat debugFrame)
     {
         var limits = new SpeedResult();
 
-        limits.Forward = SpeedLimit.STOP;
-        limits.Reverse = SpeedLimit.STOP;
+        limits.Forward = SpeedLimit.NORMAL;
+        limits.Reverse = SpeedLimit.NORMAL;
 
-        var frontProjection = _layoutService.ProjectOnPath(front);
-        var backProjection = _layoutService.ProjectOnPath(back);
-        var direction = _layoutService.GetTravelDirection(frontProjection, backProjection);
-        var frontStopProjection = _layoutService.MoveAlongPath(frontProjection.Point, frontProjection.Path,
-            frontProjection.Edge, config.Vision.StopWhenPixelsLessThan, direction);
+        var stopProjection = Projection(front, back, config.Vision.StopWhenPixelsLessThan);
+        var slowProjection = Projection(front, back, config.Vision.SlowWhenPixelsLessThan);
 
-        if (frontStopProjection.ReachedEnd)
+        // Split path, something bad has gone wrong
+        if (stopProjection != null && slowProjection != null)
         {
-            Cv2.Circle(debugFrame, frontStopProjection.Point.ToPoint(), 3, Colors.Red, -1);
-            limits.Forward = SpeedLimit.STOP;
+            if (stopProjection.Value.frontCollision.ReachedEnd)
+            {
+                limits.Forward = SpeedLimit.STOP;
+                Cv2.Circle(debugFrame, stopProjection.Value.frontCollision.Point.ToPoint(), 3, Colors.Red, -1);
+            }
+            else if (slowProjection.Value.frontCollision.ReachedEnd)
+            {
+                limits.Forward = SpeedLimit.SLOW;
+                Cv2.Circle(debugFrame, slowProjection.Value.frontCollision.Point.ToPoint(), 3, Colors.Orange, -1);
+            }
+
+            if (stopProjection.Value.backCollision.ReachedEnd)
+            {
+                limits.Reverse = SpeedLimit.STOP;
+                Cv2.Circle(debugFrame, stopProjection.Value.backCollision.Point.ToPoint(), 3, Colors.Red, -1);
+            }
+            else if (slowProjection.Value.backCollision.ReachedEnd)
+            {
+                limits.Reverse = SpeedLimit.SLOW;
+                Cv2.Circle(debugFrame, slowProjection.Value.backCollision.Point.ToPoint(), 3, Colors.Orange, -1);
+            }
         }
         else
         {
-            Cv2.Circle(debugFrame, frontStopProjection.Point.ToPoint(), 2, Colors.Orange, -1);
-            limits = 
+            limits.Forward = SpeedLimit.STOP;
+            limits.Reverse = SpeedLimit.STOP;
         }
 
-        // "Turnouts" arnt some different concept. with parts right, turnouts is just the reason a path may end.
-
-
-        // var point = pathProjector.Project(front.Position.ToLayoutPoint());
-        //
-        // Cv2.Circle(debugFrame, point.Point.ToPoint(), 10, new Scalar(255, 0, 0, 255));
-        //
-        // using var binary = new Mat();
-        // Cv2.Threshold(config.blocks, binary, 254.0, 255.0, ThresholdTypes.Binary);
-        //
-        // using var distMap = new Mat();
-        // Cv2.DistanceTransform(binary, distMap, DistanceTypes.L2, DistanceTransformMasks.Mask5);
-        //
-        //
-        // // If position is in (x, y) space:
-        // int row = (int)front.Position.Y; // row = y
-        // int col = (int)front.Position.X; // col = x
-        //
-        // if (row < 0 || row >= distMap.Rows || col < 0 || col >= distMap.Cols)
-        // {
-        //     limits.Forward = SpeedLimit.STOP;
-        //     limits.Reverse = SpeedLimit.STOP;
-        //     return limits;
-        // }
-        //
-        // // The detected bits will be in the frame but the front or back could be
-        // // slightly outside the frame since it's an end of the rotated rect
-        // if (front.Position.Y < distMap.Rows && front.Position.X < distMap.Cols)
-        // {
-        //     var closestBlack = GetNearestBlack(front, binary);
-        //     var frontDist = closestBlack.DistanceTo(front.Position);
-        //
-        //     // Stop will be less than slow. Once passed the dists will be inverted and
-        //     // start increasing again so the HasPassed check is also needed
-        //     if (frontDist < config.SlowWhenPixelsLessThan
-        //         && front.Position.HasPassed(closestBlack, front.Direction))
-        //     {
-        //         limits.Forward = SpeedLimit.STOP;
-        //
-        //         // Red
-        //         Cv2.Circle(debugFrame, closestBlack.ToPoint(), 4, new Scalar(0, 0, 255, 255), -1);
-        //     }
-        //     else if (frontDist < config.StopWhenPixelsLessThan)
-        //     {
-        //         limits.Forward = SpeedLimit.STOP;
-        //         // Red
-        //         Cv2.Circle(debugFrame, closestBlack.ToPoint(), 4, new Scalar(0, 0, 255, 255), -1);
-        //     }
-        //     else if (frontDist < config.SlowWhenPixelsLessThan)
-        //     {
-        //         limits.Forward = SpeedLimit.SLOW;
-        //         // Orange
-        //         Cv2.Circle(debugFrame, closestBlack.ToPoint(), 4, new Scalar(0, 165, 255, 255), -1);
-        //     }
-        // }
-        // else
-        // {
-        //     limits.Forward = SpeedLimit.STOP;
-        //     // Cv2.Circle(debugFrame, closestBlack.ToPoint(), 4, new Scalar(0, 165, 255, 255), -1);
-        // }
-        //
-        // if (back.Position.Y < distMap.Rows && back.Position.X < distMap.Cols)
-        // {
-        //     var closestBlack = GetNearestBlack(back, binary);
-        //     var backDist = closestBlack.DistanceTo(back.Position);
-        //
-        //     if (backDist < config.SlowWhenPixelsLessThan
-        //         && back.Position.HasPassed(closestBlack, back.Direction))
-        //     {
-        //         limits.Reverse = SpeedLimit.STOP;
-        //     }
-        //     else if (backDist < config.StopWhenPixelsLessThan)
-        //     {
-        //         limits.Reverse = SpeedLimit.STOP;
-        //     }
-        //     else if (backDist < config.SlowWhenPixelsLessThan)
-        //     {
-        //         limits.Reverse = SpeedLimit.SLOW;
-        //     }
-        // }
-        // else
-        // {
-        //     limits.Reverse = SpeedLimit.STOP;
-        // }
 
         return limits;
     }

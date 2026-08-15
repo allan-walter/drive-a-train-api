@@ -113,12 +113,12 @@ public class DccService : IHostedService
         });
     }
 
-    public LimitValues GetThrottleLimits(bool @override)
+    public LimitValues GetThrottleLimits(bool? @override = null)
     {
         var res = new LimitValues(config.Dcc);
 
         // Dev override. Default max speed still applies
-        if (!@override)
+        if (!(@override ?? Throttle.Override))
         {
             if (ForwardLimit == SpeedLimit.SLOW)
                 res.Forward = config.Dcc.SlowThrottleValue;

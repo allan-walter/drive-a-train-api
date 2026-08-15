@@ -82,17 +82,15 @@ public class DetectorService(
 
             var train = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive);
 
+            SpeedResult limits = new SpeedResult() { Forward = SpeedLimit.STOP, Reverse = SpeedLimit.STOP };
             if (train != null)
             {
-                var limits = limiterService.ProcessLimits(processingFrame, train.Front, train.Back, debugFrame);
-                dccService.SetLimits(limits.Forward, limits.Reverse);
+                limits = limiterService.ProcessLimits(processingFrame, train.Front, train.Back, debugFrame);
             }
-            else
-            {
-                dccService.SetLimits(SpeedLimit.NORMAL, SpeedLimit.NORMAL);
-            }
-
-            // var throttleLimits = dccService.GetThrottleLimits(config.Dcc);
+            
+            dccService.SetLimits(limits.Forward, limits.Reverse);
+            var throttleLimits = dccService.GetThrottleLimits();
+            
             var railUnits = units.Select(u => new RailUnitGet(u)).ToList();
 
             // var railUnits = new List<RailUnitGet>();
@@ -106,11 +104,11 @@ public class DetectorService(
                 {
                     Units = railUnits,
                     Forward = dccService.ForwardLimit,
-                    // ForwardValue = throttleLimits.Forward,
+                    ForwardLimitValue = throttleLimits.Forward,
                     Reverse = dccService.ReverseLimit,
                     PowerOn = dccService.PowerIsOn,
-                    Connections = connections
-                    // ReverseValue = throttleLimits.Reverse,
+                    Connections = connections,
+                    ReverseLimitValue = throttleLimits.Reverse,
                 });
 
             lock (captureService.debugOverlayLock)
@@ -258,28 +256,29 @@ public class DetectorService(
                 // TODO maybe a hard cutoff would be best so if the unit is truely gone we dont default to random objects
                 // Do both, just in case
                 var contour = contours.Select(c =>
-                {
-                    var contour2f = c.Select(p => new Point(p.X, p.Y)).ToArray();
-                    var rotatedRect = Cv2.MinAreaRect(contour2f);
+                    {
+                        var contour2f = c.Select(p => new Point(p.X, p.Y)).ToArray();
+                        var rotatedRect = Cv2.MinAreaRect(contour2f);
 
-                    // Get the 4 corner points
-                    Point2f[] pts = rotatedRect.Points();
+                        // Get the 4 corner points
+                        Point2f[] pts = rotatedRect.Points();
 
 // Draw as a closed polygon
 // Yellow for maybe not inclyded ( we jujsut draw overtop later
-                    Cv2.Polylines(debugFrame, new Point[][] { pts.Select(p => p.ToPoint()).ToArray() }, isClosed: true,
-                        color: Colors.Yellow, thickness: 2, lineType: LineTypes.AntiAlias);
+                        Cv2.Polylines(debugFrame, new Point[][] { pts.Select(p => p.ToPoint()).ToArray() },
+                            isClosed: true,
+                            color: Colors.Yellow, thickness: 2, lineType: LineTypes.AntiAlias);
 
-                    // Draw this contour onto the filtered mask (filled white)
-                    Cv2.FillPoly(filteredMask, new[] { c }, Scalar.All(255));
+                        // Draw this contour onto the filtered mask (filled white)
+                        Cv2.FillPoly(filteredMask, new[] { c }, Scalar.All(255));
 
-                    var center = new Vector2Int(rotatedRect.Center.ToPoint().X, rotatedRect.Center.ToPoint().Y);
-                    var pointOnLayout = layoutService.ProjectOnPath(center);
+                        var center = new Vector2Int(rotatedRect.Center.ToPoint().X, rotatedRect.Center.ToPoint().Y);
+                        var pointOnLayout = layoutService.ProjectOnPath(center);
 
-                    var dist = pointOnLayout.Point.DistanceTo(center);
+                        var dist = pointOnLayout.Point.DistanceTo(center);
 
-                    return new { dist = dist, contour = c};
-                })
+                        return new { dist = dist, contour = c };
+                    })
                     .Where(d => d.dist < 15)
                     .OrderBy(a => a.dist)
                     .FirstOrDefault()?.contour;
