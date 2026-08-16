@@ -21,7 +21,7 @@ public static class OpenCvHelpers
 
         return result;
     }
-    
+
     // Combine masks, keeping it binary
     public static Mat CombineMasks(List<Mat> masks)
     {
@@ -47,14 +47,15 @@ public static class OpenCvHelpers
     }
 
     // Combine a list of masks into a color version of their mask, with a transparent background instead of black
-    public static Mat CombineMasksColor(List<(Mat Mask, LookupColor Color)> maskColorPairs)
+    public static Mat CombineMasksColor(List<(Mat Mask, UnitColor Color)> maskColorPairs)
     {
         var type = MatType.CV_8UC1;
 
         if (maskColorPairs.Count == 0)
         {
             // Default to 4-channel transparent output
-            return Mat.Zeros(new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT), MatType.CV_8UC4).ToMat();
+            return Mat.Zeros(new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT), MatType.CV_8UC4)
+                .ToMat();
         }
 
         var size = maskColorPairs[0].Mask.Size();
@@ -68,13 +69,13 @@ public static class OpenCvHelpers
                 throw new ArgumentException("Not binary type");
 
             // Build a BGRA color with full alpha where the mask is set
-            var bgraColor = new Scalar(color.SingleColor.Val0, color.SingleColor.Val1, color.SingleColor.Val2, 255);
+            var bgraColor = new Scalar(color.Color.Color.Val0, color.Color.Color.Val1, color.Color.Color.Val2, 255);
             result.SetTo(bgraColor, mask);
         }
 
         return result;
     }
-    
+
     public static Point ScalePoint(Point point)
     {
         float scaleX = (float)CaptureService.DETECTION_WIDTH / CaptureService.CAMERA_WIDTH;

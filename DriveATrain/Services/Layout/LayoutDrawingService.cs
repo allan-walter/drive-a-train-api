@@ -34,9 +34,8 @@ public class LayoutDrawingService(LayoutService layoutService, Config config)
     {
         foreach (var unit in units)
         {
-            Cv2.Line(frame, unit.Front.ToPoint(), unit.Back.ToPoint(), Colors.Blue, 3);
-
-            Cv2.Circle(frame, unit.Front.ToPoint(), 3, Colors.Green, -1);
+            // Gradiant so as the ends overlap can still get a direction from them
+            LineHelpers.DrawGradientLine(frame, unit.Front.ToPoint(), unit.Back.ToPoint(), Colors.Green, Colors.Red, 3);
         }
     }
 }

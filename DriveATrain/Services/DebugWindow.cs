@@ -19,13 +19,13 @@ public static class DebugWindow
     [
         // "colorSplit",
         // "dirMarkers"
-        "noiseRemoval"
+        // "noiseRemoval"
     ];
 
     // do NOT call clone, this method internally clones again and if you do that it'll never get disposed of
     public static void Show(string category, string title, Mat mat)
     {
-        if (!debugCategories.Contains(category))
+        if (category != "always" && !debugCategories.Contains(category))
             return;
 
         if (_uiThread == null)
@@ -33,6 +33,21 @@ public static class DebugWindow
 
         // Clone because caller may dispose/reuse the Mat
         _queue.Add(($"{category}_{title}", mat.Clone()));
+    }
+
+    public static void ShowMaskOnFrame(string category, string title, Mat mask, Mat frame)
+    {
+        if (category != "always" && !debugCategories.Contains(category))
+            return;
+
+        if (_uiThread == null)
+            Start();
+
+        var cut = new Mat();
+        frame.CopyTo(cut, mask);
+
+        // Clone because caller may dispose/reuse the Mat
+        _queue.Add(($"{category}_mask_{title}", cut));
     }
 
     private static void RunLoop()

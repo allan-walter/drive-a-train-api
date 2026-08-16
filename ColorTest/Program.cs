@@ -24,7 +24,7 @@ class Program
         Mat whiteImage = new Mat(CaptureService.DETECTION_HEIGHT, CaptureService.DETECTION_WIDTH, MatType.CV_8UC1,
             new Scalar(255));
         var items = DetectorService.SplitMaskByNearestColorRegion(frame, whiteImage,
-            LookupColor.Colors);
+            UnitColor.Colors);
 
         Console.ReadKey();
     }

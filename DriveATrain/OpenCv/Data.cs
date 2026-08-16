@@ -5,50 +5,78 @@ using OpenCvSharp;
 
 namespace DriveATrain.OpenCv;
 
-// HSV-range based color used for marker lookup/classification.
-public class LookupColor
+public class ColorRange
 {
-    // HSV (H:0-179, S:0-255, V:0-255)
-    public Scalar SingleColor { get; set; }
+    public Scalar Color { get; set; }
     public Scalar Lower { get; set; }
     public Scalar Upper { get; set; }
+    
+    // Just used for debugging display and identification in code
+    public string Name { get; set; }
 
-    public LookupColor(Scalar singleColor, int hTol = 10, int sTol = 60, int vTol = 60)
+    public ColorRange(Scalar color, string name, int hTol = 10, int sTol = 60, int vTol = 60)
     {
-        SingleColor = singleColor;
+        Color = color;
+        Name = name;
         Lower = new Scalar(
-            Math.Max(0, SingleColor.Val0 - hTol),
-            Math.Max(0, SingleColor.Val1 - sTol),
-            Math.Max(0, SingleColor.Val2 - vTol));
+            Math.Max(0, color.Val0 - hTol),
+            Math.Max(0, color.Val1 - sTol),
+            Math.Max(0, color.Val2 - vTol));
         Upper = new Scalar(
-            Math.Min(179, SingleColor.Val0 + hTol),
-            Math.Min(255, SingleColor.Val1 + sTol),
-            Math.Min(255, SingleColor.Val2 + vTol));
+            Math.Min(179, color.Val0 + hTol),
+            Math.Min(255, color.Val1 + sTol),
+            Math.Min(255, color.Val2 + vTol));
+    }
+}
+
+// HSV-range based color used for marker lookup/classification.
+public class UnitColor
+{
+    // HSV (H:0-179, S:0-255, V:0-255)
+    public ColorRange Color { get; set; }
+
+    public UnitColor(ColorRange color)
+    {
+        Color = color;
     }
 
     // Black (train roof/body) - hue/sat are unreliable this dark,
     // so use a wide H/S tolerance and rely on a tight, low V ceiling instead.
-    public static LookupColor UnitBlack = new LookupColor(
-        singleColor: new Scalar(0, 0, 35),
-        hTol: 179, // hue meaningless at low V - accept any hue
-        sTol: 255, // saturation meaningless at low V - accept any sat
-        vTol: 35 // only match dark pixels: V in [0, 70]
+    public static UnitColor UnitBlack = new UnitColor(
+        new ColorRange(
+            color: new Scalar(0, 0, 35),
+            "Black",
+            hTol: 179, // hue meaningless at low V - accept any hue
+            sTol: 255, // saturation meaningless at low V - accept any sat
+            vTol: 35 // only match dark pixels: V in [0, 70]
+        )
     );
 
-    public static LookupColor UnitYellow =
+    public static UnitColor UnitYellow = new UnitColor(
         // Yellow (connector block)
-        new LookupColor(
-            singleColor: new Scalar(19, 216, 147),
+        new ColorRange(
+            color: new Scalar(19, 216, 147),
+            "Yellow",
             hTol: 10,
             sTol: 60,
             vTol: 60
-        );
+        )
+    );
 
-    public static readonly List<LookupColor> Colors = new List<LookupColor>
+    public static readonly List<UnitColor> Colors = new List<UnitColor>
     {
         UnitBlack,
         UnitYellow
     };
+
+    public static ColorRange DirMarkerColor { get; set; } = new ColorRange(
+        color: new Scalar(10, 150, 165),
+        "Magenta",
+        // TODO
+        hTol: 12,
+        sTol: 80,
+        vTol: 80
+    );
 }
 
 public enum UnitType
@@ -89,7 +117,7 @@ public class MarkerDef
     public int ComponentId { get; set; }
 
     // hsv
-    public LookupColor Color { get; set; }
+    public UnitColor Color { get; set; }
     public UnitDefinition? Unit { get; set; }
 
     // Convex, clean but might include slightly too much
@@ -98,7 +126,7 @@ public class MarkerDef
     // Should really only be one
     public Point[] Contour { get; set; }
 
-    public MarkerDef(int componentId, LookupColor color, UnitDefinition? unit, Mat mask, Point[] contour)
+    public MarkerDef(int componentId, UnitColor color, UnitDefinition? unit, Mat mask, Point[] contour)
     {
         ComponentId = componentId;
         Color = color;

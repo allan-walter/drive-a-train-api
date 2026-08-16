@@ -29,10 +29,10 @@ public class DetectorService(
     private List<Uncouple>? _pendingConnections;
     private int _publishScheduled;
 
-    public async Task Process(Mat frame)
+    public async Task Process(Mat fullResFrame)
     {
         using var processingFrame = new Mat();
-        Cv2.Resize(frame, processingFrame,
+        Cv2.Resize(fullResFrame, processingFrame,
             new Size(CaptureService.DETECTION_WIDTH, CaptureService.DETECTION_HEIGHT));
 
         // Transparent with debug info on top. This is overlayed over the actual frame at the end
@@ -56,9 +56,11 @@ public class DetectorService(
 
             combinedMaskBinary = OpenCvHelpers.CombineMasks(markers.Select(m => m.Mask).ToList());
 
+
             // TODO gross, but dir marker dection needs a full size mask
             Cv2.Resize(combinedMaskBinary, combinedMaskBinaryFullRes,
                 new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
+
 
             // using var blocksOverlay = MeasureStage("overlay.blocks-overlay",
             //     () => Helpers.InverseMaskOverlay(config.Vision.blocks));
@@ -71,7 +73,7 @@ public class DetectorService(
                 Blend.BlendPrepared(_goZoneOverlayPrepared, debugFrame);
 
             // TODO expensive, probably because its full res, but needs to be since the markers show up quite small
-            var dirMarkers = IdentifyDirectionMarkers(frame, debugFrame, combinedMaskBinaryFullRes);
+            var dirMarkers = IdentifyDirectionMarkers(fullResFrame, debugFrame, combinedMaskBinaryFullRes);
             // var dirMarkers = new List<Point>();
             var units = CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers);
             var center = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive)?.Center;
@@ -195,45 +197,6 @@ public class DetectorService(
 
 
         using var res = GetDiffMask(frame);
-        // DebugWindow.Show("raw", res.Clone());
-
-        // using var color = new Mat();
-        // Cv2.CvtColor(res, color, ColorConversionCodes.BGR2BGRA);
-        // Blend.BlendOverlay(color, debugFrame, 0.75);
-
-        Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
-
-
-        DebugWindow.Show("noiseRemoval", "step 0", res);
-        // TODO, even with a perfect background as the train moves the cameras image changes slightly so there will always be small noise to remove
-        // I've tried disabling auto exposer, focus etc with no luck
-        // Erosion then dilation, renmove noise
-        int openSize = 3; //(int)ResolutionScaler.ScaleKernel(3);
-        using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
-        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
-
-        DebugWindow.Show("noiseRemoval", "step 1", res);
-
-        // Dilation then eriosion, fill gaps and join blobs
-        int closeSize = 15; //ResolutionScaler.ScaleKernel(30);
-        using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(closeSize, closeSize));
-        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
-
-        DebugWindow.Show("noiseRemoval", "step 2", res);
-
-        // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
-        int open2Size = 5; //(int)ResolutionScaler.ScaleKernel(15);
-        using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
-        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2);
-
-        DebugWindow.Show("noiseRemoval", "step 3", res);
-
-        // Finally, join what remains back togfether, the last stop removes a lot, and sometimes seperates things
-        int close2Size = 5; //(int)ResolutionScaler.ScaleKernel(15);
-        using var kernalClose2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(close2Size, close2Size));
-        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernalClose2);
-        
-        DebugWindow.Show("noiseRemoval", "step 4", res);
 
         using var cutout = new Mat();
         using var blurredFrame = new Mat();
@@ -242,8 +205,7 @@ public class DetectorService(
         Cv2.GaussianBlur(frame, blurredFrame, new Size(blurSize, blurSize), 0);
         blurredFrame.CopyTo(cutout, res);
 
-
-        var colorMasks = SplitMaskByNearestColorRegion(blurredFrame, res, LookupColor.Colors);
+        var colorMasks = SplitMaskByNearestColorRegion(blurredFrame, res, UnitColor.Colors);
 
         var markerDefs = new List<MarkerDef>();
         var keptMasks = new HashSet<Mat>();
@@ -254,7 +216,7 @@ public class DetectorService(
             {
                 var mask = colorMasks[index].mat;
 
-                var color = LookupColor.Colors[index];
+                var color = UnitColor.Colors[index];
 
                 Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
                     RetrievalModes.External, ContourApproximationModes.ApproxSimple);
@@ -301,11 +263,11 @@ public class DetectorService(
                     .ToList();
 
                 // TODO DEbugging
-                if (colorMasks[index].color == LookupColor.UnitBlack && validContours.Count != 1)
-                {
-                    await dccService.SetThrottleAsync(new Throttle(0, false, false));
-                    // Debugger.Break();
-                }
+                // if (colorMasks[index].color == LookupColor.UnitBlack && validContours.Count != 1)
+                // {
+                //     await dccService.SetThrottleAsync(new Throttle(0, false, false));
+                //     // Debugger.Break();
+                // }
 
                 var unitContour = validContours.FirstOrDefault();
 
@@ -357,11 +319,56 @@ public class DetectorService(
         _mog2.Apply(liveFrame, fgMask, liveLearningRate);
 
 
-        var cut = new Mat();
-        fgMask.CopyTo(cut, config.Vision.goZone);
+        var res = new Mat();
+        fgMask.CopyTo(res, config.Vision.goZone);
 
 
-        return cut;
+        // DebugWindow.Show("raw", res.Clone());
+
+        // using var color = new Mat();
+        // Cv2.CvtColor(res, color, ColorConversionCodes.BGR2BGRA);
+        // Blend.BlendOverlay(color, debugFrame, 0.75);
+
+        Cv2.Threshold(res, res, 254.0, 255.0, ThresholdTypes.Binary);
+
+        using var frameCut = new Mat();
+        liveFrame.CopyTo(frameCut, res);
+
+        DebugWindow.Show("noiseRemoval", "step 0", res);
+        // TODO, even with a perfect background as the train moves the cameras image changes slightly so there will always be small noise to remove
+        // I've tried disabling auto exposer, focus etc with no luck
+        // Erosion then dilation, renmove noise
+        int openSize = 3; //(int)ResolutionScaler.ScaleKernel(3);
+        using var kernelOpen = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(openSize, openSize));
+        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen);
+
+        DebugWindow.Show("noiseRemoval", "step 1", res);
+
+
+        // Dilation then eriosion, fill gaps and join blobs
+        int closeSize = 15; //ResolutionScaler.ScaleKernel(30);
+        using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(closeSize, closeSize));
+        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernelClose);
+
+        DebugWindow.Show("noiseRemoval", "step 2", res);
+
+        // Now that the important blobs are joined we can safely remoive bigger noise thats still seperate
+        int open2Size = 5; //(int)ResolutionScaler.ScaleKernel(15);
+        using var kernelOpen2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(open2Size, open2Size));
+        Cv2.MorphologyEx(res, res, MorphTypes.Open, kernelOpen2);
+
+        DebugWindow.Show("noiseRemoval", "step 3", res);
+
+        // Finally, join what remains back togfether, the last stop removes a lot, and sometimes seperates things
+        int close2Size = 5; //(int)ResolutionScaler.ScaleKernel(15);
+        using var kernalClose2 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(close2Size, close2Size));
+        Cv2.MorphologyEx(res, res, MorphTypes.Close, kernalClose2);
+
+        DebugWindow.Show("noiseRemoval", "step 4", res);
+
+        liveFrame.CopyTo(frameCut, res);
+
+        return res;
     }
 
     // NOTE, this frame is the full size since the white dots are quite small
@@ -372,7 +379,7 @@ public class DetectorService(
         Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
 
         using var debug = new Mat();
-        Cv2.InRange(hsv, new Scalar(105, 150, 80), new Scalar(125, 255, 255), debug);
+        Cv2.InRange(hsv, UnitColor.DirMarkerColor.Lower, UnitColor.DirMarkerColor.Upper, debug);
 
         using var frameCut = new Mat();
         frame.CopyTo(frameCut, mask);
@@ -395,40 +402,6 @@ public class DetectorService(
         }
 
         markers.AddRange(points);
-
-        // Not even true at all
-        // // This threshold includes extra noise on the unit boundary, but the markers that matter are closer to the center, and there is no noise around them
-        // // Take the closest one which will ignore the extra outside noise
-        // foreach (var unitLocation in unitLocations)
-        // {
-        //     var closetPoint = points.OrderBy(p => p.DistanceTo(unitLocation.Center)).FirstOrDefault();
-        //
-        //     if (closetPoint != null)
-        //     {
-        //         Cv2.Circle(debugFrame, closetPoint, 3, new Scalar(0, 255, 0, 255), -1);
-        //         markers.Add(closetPoint);
-        //     }
-        // }
-
-        // foreach (var contour in contours)
-        // {
-        //     var area = Cv2.ContourArea(contour);
-        //
-        //     var contour2f = contour.Select(p => new Point2f(p.X, p.Y)).ToArray();
-        //     var rect = Cv2.MinAreaRect(contour2f);
-        //     var center = rect.Center;
-        //
-        //     // Extra removed with morph
-        //     // if (area > 5)
-        //     // {
-        //     var scaled = Helpers.ScalePoint(center.ToPoint());
-        //
-        //     Cv2.Circle(debugFrame, scaled, 3, new Scalar(0, 255, 0, 255), -1);
-        //
-        //     markers.Add(scaled);
-        //     // }
-        // }
-
 
         return markers;
     }
@@ -521,8 +494,8 @@ public class DetectorService(
 
     // Static so I can use it easily in other project for debugging colors
     // Doesn't throw any exceptions, may return empty list
-    public static List<(Mat mat, LookupColor color)> SplitMaskByNearestColorRegion(Mat frame, Mat mask,
-        List<LookupColor> targetColors)
+    public static List<(Mat mat, UnitColor color)> SplitMaskByNearestColorRegion(Mat frame, Mat mask,
+        List<UnitColor> targetColors)
     {
         using var hsv = new Mat();
         Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
@@ -539,7 +512,7 @@ public class DetectorService(
 
             // Pixels in frame that fall within this color's range
             using var rangeMask = new Mat();
-            Cv2.InRange(hsv, color.Lower, color.Upper, rangeMask);
+            Cv2.InRange(hsv, color.Color.Lower, color.Color.Upper, rangeMask);
 
             // Keep only the ones that are also inside the original mask
             colorMasks[i] = new Mat();
@@ -700,8 +673,8 @@ public class DetectorService(
             {
                 if (captureService.TryGetLatestFrame(frame))
                 {
-                    await Task.Delay(100);
-                    // await Process(frame);
+                    // await Task.Delay(100);
+                    await Process(frame);
                 }
             }
         }, cancellationToken);
