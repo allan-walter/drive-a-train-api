@@ -60,7 +60,7 @@ public class BroadcastService : IHostedService, IDisposable
                 Arguments =
                     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
                     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
-                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 15 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
+                    $"-c:v mpeg1video -qscale:v 3 -bf 0 -g 1 -f mpegts -muxdelay 0 -muxpreload 0 -flush_packets 1 -",
                 // Arguments =
                 //     $"-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 " +
                 //     $"-f rawvideo -pix_fmt bgr24 -s {size} -r {CaptureService.streamFps} -i pipe:0 " +
@@ -220,15 +220,17 @@ public class BroadcastService : IHostedService, IDisposable
         using var frame = new Mat();
         var stdin = _ffmpeg.StandardInput.BaseStream;
         var frameBytes = CaptureService.streamWidth * CaptureService.streamHeight * 3;
-        var buffer = new byte[frameBytes]; // local, not a field — no need to keep it alive on the instance
+        var buffer = new byte[frameBytes];
 
         while (!token.IsCancellationRequested)
         {
-            // Waits (sleeping, no CPU spin) until CaptureService signals a new frame,
-            // or the token is cancelled.
             try
             {
                 _captureService.FrameReadySignal.Wait(token);
+                // Drain any signals that have build up while we were encoding the current frame
+                while (_captureService.FrameReadySignal.Wait(0))
+                {
+                }
             }
             catch (OperationCanceledException)
             {
@@ -236,9 +238,7 @@ public class BroadcastService : IHostedService, IDisposable
             }
 
             if (!_captureService.TryGetLatestFrame(frame) || frame.Empty())
-            {
                 continue;
-            }
 
             lock (_captureService.debugOverlayLock)
             {
