@@ -22,6 +22,15 @@ public static class DebugWindow
         // "noiseRemoval"
     ];
 
+    public static void ShowAlways(string title, Mat mat)
+    {
+        if (_uiThread == null)
+            Start();
+
+        // Clone because caller may dispose/reuse the Mat
+        _queue.Add(($"{title}", mat.Clone()));
+    }
+
     // do NOT call clone, this method internally clones again and if you do that it'll never get disposed of
     public static void Show(string category, string title, Mat mat)
     {
