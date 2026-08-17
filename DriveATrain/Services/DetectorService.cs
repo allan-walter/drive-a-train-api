@@ -378,14 +378,17 @@ public class DetectorService(
         using var hsv = new Mat();
         Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
 
-        using var debug = new Mat();
-        Cv2.InRange(hsv, UnitColor.DirMarkerColor.Lower, UnitColor.DirMarkerColor.Upper, debug);
+        
+        DebugWindow.Show("dirMarkers", "frame", frame);
+        using var inRange = new Mat();
+        InRange.InRangeHue(hsv, UnitColor.DirMarkerColor, inRange);
+        // Cv2.InRange(hsv, UnitColor.DirMarkerColor.Lower, UnitColor.DirMarkerColor.Upper, inRange);
 
         using var frameCut = new Mat();
         frame.CopyTo(frameCut, mask);
 
         using var cutout = new Mat();
-        debug.CopyTo(cutout, mask);
+        inRange.CopyTo(cutout, mask);
 
         DebugWindow.Show("dirMarkers", "thresholded", cutout);
         Point[][] contours = [];

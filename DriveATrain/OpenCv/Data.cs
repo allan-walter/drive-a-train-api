@@ -10,14 +10,20 @@ public class ColorRange
     public Scalar Color { get; set; }
     public Scalar Lower { get; set; }
     public Scalar Upper { get; set; }
-    
-    // Just used for debugging display and identification in code
+    public int HTol { get; set; }
+    public int STol { get; set; }
+    public int VTol { get; set; }
+
     public string Name { get; set; }
 
     public ColorRange(Scalar color, string name, int hTol = 10, int sTol = 60, int vTol = 60)
     {
         Color = color;
         Name = name;
+        HTol = hTol;
+        STol = sTol;
+        VTol = vTol;
+
         Lower = new Scalar(
             Math.Max(0, color.Val0 - hTol),
             Math.Max(0, color.Val1 - sTol),
@@ -70,12 +76,11 @@ public class UnitColor
     };
 
     public static ColorRange DirMarkerColor { get; set; } = new ColorRange(
-        color: new Scalar(10, 150, 165),
-        "Magenta",
-        // TODO
-        hTol: 12,
-        sTol: 80,
-        vTol: 80
+        color: new Scalar(174, 200, 170),
+        name: "Magenta",
+        hTol: 10, // H range: [164..179] and wrapped [0..4]
+        sTol: 80, // S range: [120..255]
+        vTol: 80 // V range: [90..250]
     );
 }
 

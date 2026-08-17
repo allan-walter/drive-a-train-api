@@ -18,7 +18,7 @@ public static class DebugWindow
     private static List<string> debugCategories =
     [
         // "colorSplit",
-        // "dirMarkers"
+        "dirMarkers"
         // "noiseRemoval"
     ];
 
