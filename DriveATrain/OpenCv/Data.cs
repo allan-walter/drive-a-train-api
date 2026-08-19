@@ -78,9 +78,9 @@ public class UnitColor
     public static ColorRange DirMarkerColor { get; set; } = new ColorRange(
         color: new Scalar(174, 200, 170),
         name: "Magenta",
-        hTol: 10, // H range: [164..179] and wrapped [0..4]
-        sTol: 80, // S range: [120..255]
-        vTol: 80 // V range: [90..250]
+        hTol: 6, // H range: [168..179], no wraparound into pure red
+        sTol: 70,
+        vTol: 70
     );
 }
 
