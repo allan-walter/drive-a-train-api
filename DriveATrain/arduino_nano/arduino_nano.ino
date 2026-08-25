@@ -8,8 +8,8 @@ struct Channel {
 };
 
 Channel ch[] = {
-  { 2, 9,  60, 120 },
-  { 3, 10, 50, 130 },
+  { 12, 11,  60, 120 },
+  // { 3, 10, 50, 130 },
 };
 
 void setup() {
@@ -17,7 +17,7 @@ void setup() {
     pinMode(c.inPin, INPUT_PULLUP);
     c.sv.attach(c.servoPin);
     c.pos = c.off;
-    c.sv.write(c.pos);
+    c.sv.write(c.pos); 
   }
 }
 

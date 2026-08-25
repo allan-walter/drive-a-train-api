@@ -18,9 +18,13 @@ public static class DebugWindow
     private static List<string> debugCategories =
     [
         // "colorSplit",
-        "dirMarkers"
+        "dirMarkers",
+        "units"
         // "noiseRemoval"
     ];
+
+    // For callers where building the debug image is itself expensive
+    public static bool IsEnabled(string category) => category == "always" || debugCategories.Contains(category);
 
     public static void ShowAlways(string title, Mat mat)
     {

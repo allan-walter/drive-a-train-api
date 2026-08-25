@@ -46,15 +46,16 @@ public class UnitColor
         Color = color;
     }
 
-    // Black (train roof/body) - hue/sat are unreliable this dark,
-    // so use a wide H/S tolerance and rely on a tight, low V ceiling instead.
-    public static UnitColor UnitBlack = new UnitColor(
+    // Red (painted loco body). Sampled from the camera: hue 171-3 wrapping through 180,
+    // centre 178. The V ceiling of ~105 matters: it keeps out the magenta direction marker
+    // (V ~170) and bright red wires, both of which share the hue.
+    public static UnitColor UnitRed = new UnitColor(
         new ColorRange(
-            color: new Scalar(0, 0, 35),
-            "Black",
-            hTol: 179, // hue meaningless at low V - accept any hue
-            sTol: 255, // saturation meaningless at low V - accept any sat
-            vTol: 35 // only match dark pixels: V in [0, 70]
+            color: new Scalar(178, 155, 60),
+            "Red",
+            hTol: 8,
+            sTol: 90,
+            vTol: 45
         )
     );
 
@@ -71,7 +72,7 @@ public class UnitColor
 
     public static readonly List<UnitColor> Colors = new List<UnitColor>
     {
-        UnitBlack,
+        UnitRed,
         UnitYellow
     };
 
