@@ -45,7 +45,7 @@ public class DetectorService(
         using Mat combinedMaskBinaryFullRes = new Mat();
         try
         {
-            markers = GetMarkerSeeds(processingFrame, debugFrame);
+            markers = FindUnitMarkers(processingFrame, debugFrame);
 
             // TODO, for now its easier to debug just the loco
             // markers = markers.Where(m => m.Color.SingleColor == LookupColor.Colors[0].SingleColor).ToList();
@@ -139,7 +139,7 @@ public class DetectorService(
     }
 
     // Doesn't throw any exceptions, may return empty list
-    private List<MarkerDef> GetMarkerSeeds(Mat frame, Mat debugFrame)
+    private List<MarkerDef> FindUnitMarkers(Mat frame, Mat debugFrame)
     {
         var hits = UnitFinder.Find(frame, _trackMask);
 
