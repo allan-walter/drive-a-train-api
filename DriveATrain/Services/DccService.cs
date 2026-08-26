@@ -155,7 +155,7 @@ public class DccService : IHostedService
 
         throttleValue = Math.Min(throttleValue, config.Dcc.MaxSpeed);
 
-        Debug.WriteLine($"Throttle: {throttleValue}, Reverse: {reverse}");
+        // Debug.WriteLine($"Throttle: {throttleValue}, Reverse: {reverse}");
 
         _broadcastService.engineAudio.SetSpeed(throttleValue, config.Dcc.MaxSpeed);
 

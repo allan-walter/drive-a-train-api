@@ -10,6 +10,10 @@ public static class UnitFinder
 {
     private const string DebugCategory = "units";
 
+    // Per-colour debug (mask/fragments windows, rejected-candidate overlay) is limited to this
+    // colour to keep the window count down while tuning
+    private const string DebugColourName = "Red";
+
     // All px constants below are stated at full camera resolution and scaled to whatever frame
     // is passed in, so the same code runs on the full res stills in ColorTest and the quarter
     // res detection frames in DetectorService.
@@ -29,10 +33,23 @@ public static class UnitFinder
     private const int MaxWidth = 85;
     private const double MinAspect = 2.2;
     private const double MaxAspect = 6.5;
-    private const double MinFill = 0.55;
+    // The direction LED bites a notch out of the unit's blob; with the notch a real unit
+    // measures ~0.53 but mask jitter has been observed dipping it to 0.44, while wandering
+    // cables sit around 0.2-0.35, so 0.38 splits them with margin on both sides
+    private const double MinFill = 0.38;
 
     // A unit is always fully in frame, anything running off an edge is the bench or the backdrop
     private const int BorderMargin = 4;
+
+    // The direction LED washes out the paint around it, splitting a unit into fragments that
+    // individually fail the brick filters. Fragments within this gap are judged as one shape.
+    private const int MergeGap = 64;
+
+    // Anything smaller is speckle noise, not a fragment of a unit. A real LED-split fragment
+    // is at least a chunk of the ~60px-wide shell, so anything under this is safely noise;
+    // left in, specks within the merge gap stretch the convex hull away from the unit.
+    // At quarter res this is 10px; observed noise blobs run up to ~8px there.
+    private const int MinFragmentSize = 40;
 
     // Units can only be on the track, so everything outside a corridor along the layout edges
     // is bench clutter and never reaches the contour stage. Wide enough for the widest unit
@@ -94,9 +111,12 @@ public static class UnitFinder
         using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(Kernel(CloseSize), Kernel(CloseSize)));
 
         var hits = new List<Hit>();
+        var rejects = new List<(RotatedRect Rect, string Reason)>();
 
         foreach (var unit in UnitColor.Colors)
         {
+            bool debugColour = DebugWindow.IsEnabled(DebugCategory) && unit.Color.Name == DebugColourName;
+
             using var mask = new Mat();
             InRange.InRangeHue(hsv, unit.Color, mask);
             if (trackMask != null)
@@ -105,47 +125,120 @@ public static class UnitFinder
             Cv2.MorphologyEx(mask, mask, MorphTypes.Open, kernelOpen);
             Cv2.MorphologyEx(mask, mask, MorphTypes.Close, kernelClose);
 
-            DebugWindow.Show(DebugCategory, $"mask {unit.Color.Name}", mask);
+            if (debugColour)
+                DebugWindow.Show(DebugCategory, $"mask {unit.Color.Name}", mask);
 
             Cv2.FindContours(mask, out Point[][] contours, out _,
                 RetrievalModes.External, ContourApproximationModes.ApproxSimple);
 
-            foreach (var contour in contours)
+            bool TryAdd(Point[] contour)
             {
                 var rect = Cv2.MinAreaRect(contour);
                 double length = Math.Max(rect.Size.Width, rect.Size.Height);
                 double width = Math.Min(rect.Size.Width, rect.Size.Height);
 
-                if (length < Px(MinLength) || length > Px(MaxLength)) continue;
-                if (width < Px(MinWidth) || width > Px(MaxWidth)) continue;
+                bool Reject(string reason)
+                {
+                    if (debugColour) rejects.Add((rect, reason));
+                    return false;
+                }
+
+                if (length < Px(MinLength) || length > Px(MaxLength)) return Reject($"len {length:F0}");
+                if (width < Px(MinWidth) || width > Px(MaxWidth)) return Reject($"wid {width:F0}");
 
                 double aspect = length / Math.Max(1, width);
-                if (aspect < MinAspect || aspect > MaxAspect) continue;
-                if (TouchesBorder(rect, frame.Size(), Px(BorderMargin))) continue;
+                if (aspect < MinAspect || aspect > MaxAspect) return Reject($"asp {aspect:F1}");
+                if (TouchesBorder(rect, frame.Size(), Px(BorderMargin))) return Reject("border");
 
                 // A unit is a solid brick, so it fills its own bounding rect. Cables and tool
                 // handles are the right size but wander around inside theirs.
                 double fill = Cv2.ContourArea(contour) / (length * width);
-                if (fill < MinFill) continue;
+                if (fill < MinFill) return Reject($"fill {fill:F2}");
 
                 hits.Add(new Hit { Colour = unit.Color.Name, Rect = rect, Fill = fill, Contour = contour });
+                return true;
+            }
+
+            // Speckle noise survives the Open as 1-2px blobs; left in, it chains real unit
+            // fragments to distant clutter during grouping and the oversize hull then fails
+            var fragments = contours
+                .Where(c =>
+                {
+                    var br = Cv2.BoundingRect(c);
+                    return Math.Max(br.Width, br.Height) >= Px(MinFragmentSize);
+                })
+                .ToArray();
+
+            if (debugColour)
+            {
+                using var survivors = Mat.Zeros(mask.Size(), MatType.CV_8UC1).ToMat();
+                Cv2.DrawContours(survivors, fragments, -1, Scalar.White, -1);
+                DebugWindow.Show(DebugCategory, $"fragments {unit.Color.Name}", survivors);
+            }
+
+            foreach (var group in GroupNearbyContours(fragments, Px(MergeGap)))
+            {
+                // A lone fragment is judged by its own area so wandering cables stay rejected.
+                // A merged group is judged by its convex hull: the LED hole inside is expected,
+                // and the hull also puts the LED back inside the unit mask for dir detection.
+                // If the hull fails (a stray red object got pulled into the group), fall back
+                // to judging each fragment on its own so a whole unit is never lost by merging.
+                if (group.Count == 1)
+                {
+                    TryAdd(group[0]);
+                }
+                else if (!TryAdd(Cv2.ConvexHull(group.SelectMany(c => c).ToArray())))
+                {
+                    foreach (var member in group)
+                        TryAdd(member);
+                }
             }
         }
 
-        Draw(frame, hits);
+        Draw(frame, hits, rejects);
         return hits;
+    }
+
+    // Union-find over contours whose bounding rects come within gap px of each other
+    private static List<List<Point[]>> GroupNearbyContours(Point[][] contours, int gap)
+    {
+        var parent = Enumerable.Range(0, contours.Length).ToArray();
+        int Find(int a) => parent[a] == a ? a : parent[a] = Find(parent[a]);
+
+        var rects = contours.Select(Cv2.BoundingRect).ToArray();
+        for (int a = 0; a < contours.Length; a++)
+        for (int b = a + 1; b < contours.Length; b++)
+        {
+            int dx = Math.Max(0, Math.Max(rects[b].Left - rects[a].Right, rects[a].Left - rects[b].Right));
+            int dy = Math.Max(0, Math.Max(rects[b].Top - rects[a].Bottom, rects[a].Top - rects[b].Bottom));
+            if (dx * dx + dy * dy <= gap * gap)
+                parent[Find(a)] = Find(b);
+        }
+
+        return Enumerable.Range(0, contours.Length)
+            .GroupBy(Find)
+            .Select(g => g.Select(i => contours[i]).ToList())
+            .ToList();
     }
 
     private static bool TouchesBorder(RotatedRect rect, Size frame, int margin) =>
         rect.Points().Any(p => p.X < margin || p.Y < margin ||
                                p.X > frame.Width - margin || p.Y > frame.Height - margin);
 
-    private static void Draw(Mat frame, List<Hit> hits)
+    private static void Draw(Mat frame, List<Hit> hits, List<(RotatedRect Rect, string Reason)> rejects)
     {
         if (!DebugWindow.IsEnabled(DebugCategory))
             return;
 
         using var debug = frame.Clone();
+
+        foreach (var (rect, reason) in rejects)
+        {
+            var pts = rect.Points().Select(p => p.ToPoint()).ToArray();
+            Cv2.Polylines(debug, new[] { pts }, true, Colors.Red, 1, LineTypes.AntiAlias);
+            Cv2.PutText(debug, reason, pts[1] + new Point(0, -4),
+                HersheyFonts.HersheySimplex, 0.4, Colors.Red, 1, LineTypes.AntiAlias);
+        }
 
         foreach (var hit in hits)
         {

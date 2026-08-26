@@ -5,6 +5,16 @@ namespace DriveATrain.Services;
 
 public static class OpenCvHelpers
 {
+    // Unit colors are stored as their HSV detection center; convert to BGR before using one as a paint color
+    public static Scalar HsvToBgr(Scalar hsv)
+    {
+        using var hsvMat = new Mat(1, 1, MatType.CV_8UC3, new Scalar(hsv.Val0, hsv.Val1, hsv.Val2));
+        using var bgrMat = new Mat();
+        Cv2.CvtColor(hsvMat, bgrMat, ColorConversionCodes.HSV2BGR);
+        var bgr = bgrMat.At<Vec3b>(0, 0);
+        return new Scalar(bgr.Item0, bgr.Item1, bgr.Item2);
+    }
+
     // Change white to transparent, and only return black
     public static Mat InverseMaskOverlay(Mat mat)
     {
@@ -69,8 +79,8 @@ public static class OpenCvHelpers
                 throw new ArgumentException("Not binary type");
 
             // Build a BGRA color with full alpha where the mask is set
-            var bgraColor = new Scalar(color.Color.Color.Val0, color.Color.Color.Val1, color.Color.Color.Val2, 255);
-            result.SetTo(bgraColor, mask);
+            var bgr = HsvToBgr(color.Color.Color);
+            result.SetTo(new Scalar(bgr.Val0, bgr.Val1, bgr.Val2, 255), mask);
         }
 
         return result;

@@ -6,7 +6,10 @@ namespace DriveATrain.Services;
 
 public class CaptureService : IHostedService
 {
+    // One semaphore per consumer: a Release wakes exactly one waiter, so the encoder and
+    // detector would steal frames from each other if they shared one
     public SemaphoreSlim FrameReadySignal = new(0);
+    public SemaphoreSlim DetectorFrameSignal = new(0);
 
     // public const int CAMERA_WIDTH = 640;
     //
@@ -56,8 +59,10 @@ public class CaptureService : IHostedService
     {
         string[] controls =
         {
+            // 3500 matches what auto-WB settles on under the garage lighting, so locking
+            // looks identical to auto — it just stops drifting when the unit LED is in frame
             "white_balance_automatic=0",
-            "white_balance_temperature=4600",
+            "white_balance_temperature=3500",
             "auto_exposure=1",
             "exposure_time_absolute=250",
             "focus_automatic_continuous=0",
@@ -104,7 +109,7 @@ public class CaptureService : IHostedService
         else
         {
             // SetCameraControls();
-            
+
             psi = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
@@ -159,6 +164,7 @@ public class CaptureService : IHostedService
                 frame.CopyTo(latestFrame);
             }
             FrameReadySignal.Release();
+            DetectorFrameSignal.Release();
         }
     }
 

@@ -17,10 +17,8 @@ public static class DebugWindow
 
     private static List<string> debugCategories =
     [
-        // "colorSplit",
-        "dirMarkers",
-        "units"
-        // "noiseRemoval"
+        // "dirMarkers",
+        // "units"
     ];
 
     // For callers where building the debug image is itself expensive

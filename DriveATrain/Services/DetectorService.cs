@@ -73,7 +73,6 @@ public class DetectorService(
 
             // TODO expensive, probably because its full res, but needs to be since the markers show up quite small
             var dirMarkers = IdentifyDirectionMarkers(fullResFrame, debugFrame, combinedMaskBinaryFullRes);
-            // var dirMarkers = new List<Point>();
             var units = CalculateLayoutPosition(processingFrame, debugFrame, markers, dirMarkers);
             var center = units.FirstOrDefault(u => u.Marker.Unit?.Type == UnitType.Locomotive)?.Center;
 
@@ -115,6 +114,11 @@ public class DetectorService(
                 });
 
             ExtraDebugInfo(debugFrame);
+
+            // Drawn last so no other overlay can cover a detected marker; every dot here
+            // is a candidate the orientation logic saw, hidden ones were misleading
+            foreach (var dirMarker in dirMarkers)
+                Cv2.Circle(debugFrame, dirMarker, 3, Colors.Gold, -1);
 
             lock (captureService.debugOverlayLock)
             {
@@ -172,7 +176,9 @@ public class DetectorService(
                 isClosed: true, color: Colors.Green, thickness: 2, lineType: LineTypes.AntiAlias);
 
             var mask = Mat.Zeros(frame.Size(), MatType.CV_8UC1).ToMat();
-            Cv2.FillPoly(mask, new[] { best.Contour }, Colors.White);
+            // Hull, not raw contour: the direction LED cuts a concave notch out of the
+            // colour blob, and the LED must land inside this mask to be found
+            Cv2.FillPoly(mask, new[] { Cv2.ConvexHull(best.Contour) }, Colors.White);
 
             markerDefs.Add(new MarkerDef(
                 -1,
@@ -186,24 +192,30 @@ public class DetectorService(
         return markerDefs;
     }
 
+    // The LED reads blue-white and grey weights blue at only 11%, so threshold the max of
+    // the three channels instead. 200 leaves headroom for compression noise between frames;
+    // the area floor drops the 1-2px specular glints that sneak in at the lower cutoff
+    // (the LED blob itself measures ~260)
+    private const int DirMarkerBrightness = 200;
+    private const int DirMarkerMinArea = 20;
+
     // NOTE, this frame is the full size since the white dots are quite small
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, Mat mask)
     {
-        // DebugWindow.Show("test", frame.Clone());
-        using var hsv = new Mat();
-        Cv2.CvtColor(frame, hsv, ColorConversionCodes.BGR2HSV);
-
-        
         DebugWindow.Show("dirMarkers", "frame", frame);
-        using var inRange = new Mat();
-        InRange.InRangeHue(hsv, UnitColor.DirMarkerColor, inRange);
-        // Cv2.InRange(hsv, UnitColor.DirMarkerColor.Lower, UnitColor.DirMarkerColor.Upper, inRange);
 
-        using var frameCut = new Mat();
-        frame.CopyTo(frameCut, mask);
+        var channels = Cv2.Split(frame);
+        using var maxChannel = new Mat();
+        Cv2.Max(channels[0], channels[1], maxChannel);
+        Cv2.Max(maxChannel, channels[2], maxChannel);
+        foreach (var channel in channels)
+            channel.Dispose();
+
+        using var bright = new Mat();
+        Cv2.Threshold(maxChannel, bright, DirMarkerBrightness, 255, ThresholdTypes.Binary);
 
         using var cutout = new Mat();
-        inRange.CopyTo(cutout, mask);
+        bright.CopyTo(cutout, mask);
 
         DebugWindow.Show("dirMarkers", "thresholded", cutout);
         Point[][] contours = [];
@@ -213,11 +225,13 @@ public class DetectorService(
 
         var markers = new List<Point>();
 
-        var points = contours.Select(c => OpenCvHelpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint())).ToList();
-        foreach (var point in points)
-        {
-            Cv2.Circle(debugFrame, point, 3, Colors.Gold, -1);
-        }
+        // Largest first, so downstream first-inside-the-unit matching prefers the LED blob
+        // over any glint that survived the area floor
+        var points = contours
+            .Where(c => Cv2.ContourArea(c) >= DirMarkerMinArea)
+            .OrderByDescending(c => Cv2.ContourArea(c))
+            .Select(c => OpenCvHelpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint()))
+            .ToList();
 
         markers.AddRange(points);
 
@@ -253,25 +267,40 @@ public class DetectorService(
                 .FirstOrDefault(p =>
                     RectContainsPoint(rotatedRect, p.Value));
 
-
-// O
-
-            if (point == null)
+            bool markerDetected = point != null;
+            if (!markerDetected)
             {
-                // TODO delete, limit handles this properl;y (hopefuly)
-                // so I can debug break without the train driving away
-                // dccService.SetThrottleAsync(new Throttle(0, false, false));
+                // The LED can drop out for a frame; the unit can't physically flip between
+                // frames, so reuse the last seen marker position instead of guessing. No
+                // history means the unit can't be oriented yet, skip it this frame.
+                if (_lastDirMarker.TryGetValue(marker.Color.Color.Name, out var prev))
+                    point = prev;
+                else
+                    continue;
             }
 
             if (point != null)
             {
+                if (markerDetected)
+                    _lastDirMarker[marker.Color.Color.Name] = point.Value;
+
                 (double dist, Transform front, Transform back) best = default;
                 double bestDist = double.MaxValue;
+
+                double shortDim = Math.Min(rotatedRect.Size.Width, rotatedRect.Size.Height);
+                double longDim = Math.Max(rotatedRect.Size.Width, rotatedRect.Size.Height);
 
                 for (int j = 0; j < 4; j++)
                 {
                     var a = box[j];
                     var b = box[(j + 1) % 4];
+
+                    // Only the two short ends may compete: for a marker mid-length near one
+                    // side, a long side edge's corner-distance sum can narrowly beat the
+                    // correct end and point the unit sideways for a frame
+                    double edgeLen = Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2));
+                    if (edgeLen > (shortDim + longDim) / 2)
+                        continue;
 
                     var backA = box[(j + 2) % 4];
                     var backB = box[(j + 3) % 4];
@@ -289,7 +318,10 @@ public class DetectorService(
                         (front, back) = (back, front);
                     }
 
-                    double dist = a.DistanceTo(point.Value) + b.DistanceTo(point.Value);
+                    // Distance to the end's midpoint, i.e. the marker's position along the
+                    // unit's long axis — how far the marker sits toward a side is irrelevant
+                    // to which end is the front, so it must not influence the score
+                    double dist = midFront.DistanceTo(point.Value);
 
                     if (dist < bestDist)
                     {
@@ -309,6 +341,9 @@ public class DetectorService(
 
         return res;
     }
+
+    // Last seen dir marker per unit colour, used to hold orientation through LED dropout frames
+    private readonly Dictionary<string, Point> _lastDirMarker = new();
 
     private static bool RectContainsPoint(RotatedRect rect, Point2f p)
     {
@@ -393,6 +428,20 @@ public class DetectorService(
 
             while (!cancellationToken.IsCancellationRequested && !token.IsCancellationRequested)
             {
+                try
+                {
+                    await captureService.DetectorFrameSignal.WaitAsync(token.Token);
+                    // Drain signals that built up while processing the previous frame,
+                    // so we always work on the latest frame instead of a backlog
+                    while (captureService.DetectorFrameSignal.Wait(0))
+                    {
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
                 if (captureService.TryGetLatestFrame(frame))
                 {
                     // await Task.Delay(100);

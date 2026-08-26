@@ -46,16 +46,19 @@ public class UnitColor
         Color = color;
     }
 
-    // Red (painted loco body). Sampled from the camera: hue 171-3 wrapping through 180,
-    // centre 178. The V ceiling of ~105 matters: it keeps out the magenta direction marker
-    // (V ~170) and bright red wires, both of which share the hue.
+    // Red (painted loco body). Sampled from the camera: unlit paint sits at hue 171-186
+    // (wrapping through 180), but the direction LED's blue-white light shifts the lit part
+    // of the shell down to ~160 and brightens it, so the range reaches down and up to keep
+    // the unit in one piece. The old V ceiling of 105 existed to exclude the magenta paint
+    // direction marker, which the LED replaced. Bright red wires that now share the range
+    // are rejected by the corridor mask and the brick shape filters instead.
     public static UnitColor UnitRed = new UnitColor(
         new ColorRange(
-            color: new Scalar(178, 155, 60),
+            color: new Scalar(173, 160, 78),
             "Red",
-            hTol: 8,
-            sTol: 90,
-            vTol: 45
+            hTol: 13,
+            sTol: 95,
+            vTol: 62
         )
     );
 
