@@ -38,8 +38,6 @@ public class PovVideoService : IHostedService
 
     private void StartFfmpeg(CancellationToken token)
     {
-        const string url = "http://192.168.20.100:81/stream";
-
         var psi = new ProcessStartInfo
         {
             // FileName = "ffmpeg", // Ensure ffmpeg is in system PATH or use full path like @"C:\ffmpeg\bin\ffmpeg.exe"
@@ -59,7 +57,7 @@ public class PovVideoService : IHostedService
             "-reconnect_streamed", "1",
             "-reconnect_delay_max", "2",
             "-f", "mjpeg",
-            "-i", url, // Passed cleanly with zero escaping logic required
+            "-i", _config.PovCameraUrl,
             "-c:v", "mpeg1video",
             "-b:v", "1000k",
             "-pix_fmt", "yuv420p",

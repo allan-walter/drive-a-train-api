@@ -53,37 +53,6 @@ public class CaptureService : IHostedService
         _captureTask = Task.Run(() => Capture(_cts.Token), _cts.Token);
         return Task.CompletedTask;
     }
-    
-    // TODO share with training image generator
-    private void SetCameraControls()
-    {
-        string[] controls =
-        {
-            // 3500 matches what auto-WB settles on under the garage lighting, so locking
-            // looks identical to auto — it just stops drifting when the unit LED is in frame
-            "white_balance_automatic=0",
-            "white_balance_temperature=3500",
-            "auto_exposure=1",
-            "exposure_time_absolute=250",
-            "focus_automatic_continuous=0",
-            "focus_absolute=0"
-        };
-
-        foreach (var control in controls)
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "v4l2-ctl",
-                Arguments = $"-d /dev/video0 -c {control}",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using var proc = Process.Start(psi);
-            proc.WaitForExit();
-        }
-    }
 
     private void Capture(CancellationToken token)
     {
@@ -98,7 +67,7 @@ public class CaptureService : IHostedService
             {
                 FileName = "ffmpeg",
                 Arguments =
-                    $"-f dshow -vcodec mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {fps} -i video=\"Brio 100\" " +
+                    $"-f dshow -vcodec mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {fps} -i video=\"{config.BirdsEyeCameraName}\" " +
                     $"-pix_fmt bgr24 {flipFilter}-f rawvideo -an -sn -",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -114,7 +83,7 @@ public class CaptureService : IHostedService
             {
                 FileName = "ffmpeg",
                 Arguments =
-                    $"-f v4l2 -vcodec mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {fps} -i /dev/video0 " +
+                    $"-f v4l2 -vcodec mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {fps} -i {config.BirdsEyeCameraName} " +
                     $"-pix_fmt bgr24 {flipFilter}-f rawvideo -an -sn -",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -163,6 +132,7 @@ public class CaptureService : IHostedService
             {
                 frame.CopyTo(latestFrame);
             }
+
             FrameReadySignal.Release();
             DetectorFrameSignal.Release();
         }

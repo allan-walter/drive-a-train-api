@@ -56,8 +56,9 @@ public class TurnoutLocation
 
 public class CameraConfig
 {
-    public int Index { get; set; }
     public bool Flip { get; set; }
+    public string BirdsEyeCameraName { get; set; }
+    public string PovCameraUrl { get; set; }
 }
 
 public class VisionConfig

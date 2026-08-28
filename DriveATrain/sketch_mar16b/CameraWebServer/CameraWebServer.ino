@@ -21,9 +21,9 @@
 //#define CAMERA_MODEL_M5STACK_WIDE // Has PSRAM
 //#define CAMERA_MODEL_M5STACK_ESP32CAM // No PSRAM
 //#define CAMERA_MODEL_M5STACK_UNITCAM // No PSRAM
-//#define CAMERA_MODEL_AI_THINKER // Has PSRAM
+#define CAMERA_MODEL_AI_THINKER // Has PSRAM
 //#define CAMERA_MODEL_TTGO_T_JOURNAL // No PSRAM
-#define CAMERA_MODEL_XIAO_ESP32S3 // Has PSRAM
+// #define CAMERA_MODEL_XIAO_ESP32S3 // Has PSRAM
 // ** Espressif Internal Boards **
 //#define CAMERA_MODEL_ESP32_CAM_BOARD
 //#define CAMERA_MODEL_ESP32S2_CAM_BOARD
@@ -37,7 +37,9 @@
 // ===========================
 // The below was setup on router for a static ip
 // http://192.168.20.23
-const char* ssid = "Trustpower_2.4GHz_4192_EXT";
+// const char* ssid = "Trustpower_2.4GHz_4192_EXT";
+// const char* password = "Hujowikabe";
+const char* ssid = "Trustpower_2.4GHz_4192";
 const char* password = "Hujowikabe";
 
 void startCameraServer();
