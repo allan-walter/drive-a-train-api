@@ -21,10 +21,12 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddSingleton<DccService>();
 builder.Services.AddSingleton<LayoutService>();
 builder.Services.AddSingleton<LayoutDrawingService>();
+builder.Services.AddSingleton<DccService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DccService>());
+builder.Services.AddSingleton<MqttService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttService>());
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DetectorService>());
 builder.Services.AddSingleton<LimiterService>();

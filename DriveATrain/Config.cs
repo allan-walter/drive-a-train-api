@@ -10,6 +10,7 @@ namespace DriveATrain;
 public class Config
 {
     public DccConfig Dcc { get; set; }
+    public MqttConfig Mqtt { get; set; } = new();
     public TurnoutConfig Turnout { get; set; }
     public CameraConfig Camera { get; set; }
     public VisionConfig Vision { get; set; }
@@ -39,9 +40,15 @@ public class DccConfig
     public double ThrottleStep { get; set; }
 }
 
+public class MqttConfig
+{
+    public string Host { get; set; } = "192.168.20.201";
+    public int Port { get; set; } = 1883;
+}
+
 public class TurnoutConfig
 {
-    public string Port { get; set; }
+    public string CommandTopic { get; set; } = "driveatrain/turnout/cmd";
     public List<TurnoutLocation> Locations { get; set; }
 }
 
