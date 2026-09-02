@@ -35,7 +35,8 @@ public class LayoutService
     // Returns the node it deemed to be closest (there's a bit more going on than a simple distance check), and the point snapped to the path
     public ProjectionResult ProjectOnPath(Vector2Int p, Mat? debugFrame = null)
     {
-        const double turnoutClearance = 30;
+        double turnoutClearance = config.Vision.TurnoutClearance;
+
         var nodesById = layout.Nodes.ToDictionary(n => n.Id);
         var turnoutsByNode = layout.Turnouts.ToDictionary(n => n.NodeId);
 
@@ -55,6 +56,7 @@ public class LayoutService
 
             // If we're and the start or end of a path, and the node is a turnout
             // The end needs moved back a bit so there is clear separation and it doesn’t accidentally get picked up by a train on the turnout. The path is still valid and there could be something on it, there just needs to be a clear separation 
+            // Itg needs moved more than you'd think, since the end of the train sticks out a bit and points one way even tough its on another path
             var nodeAPath = Paths.FirstOrDefault(p =>
                 (p.StartNode.Id == edge.A && EdgesMatch(p.Edges.First(), edge)) ||
                 (p.EndNode.Id == edge.A && EdgesMatch(p.Edges.Last(), edge)));

@@ -193,11 +193,13 @@ public class DetectorService(
     }
 
     // The LED reads blue-white and grey weights blue at only 11%, so threshold the max of
-    // the three channels instead. 200 leaves headroom for compression noise between frames;
-    // the area floor drops the 1-2px specular glints that sneak in at the lower cutoff
-    // (the LED blob itself measures ~260)
-    private const int DirMarkerBrightness = 200;
-    private const int DirMarkerMinArea = 20;
+    // the three channels instead. Both floors are set for the worst case: at the far corner
+    // of the frame the LED is viewed off-axis and its blob shrinks from ~260 area to ~6-20,
+    // so anything stricter makes the marker flash there. Glints that slip in at these loose
+    // floors are handled by the blue-tint discard and the roundness scoring below
+    private const int DirMarkerBrightness = 160;
+    private const int DirMarkerMinArea = 3;
+    private const int DirMarkerMinBlueTint = 10;
 
     // NOTE, this frame is the full size since the white dots are quite small
     public List<Point> IdentifyDirectionMarkers(Mat frame, Mat debugFrame, Mat mask)
@@ -225,12 +227,35 @@ public class DetectorService(
 
         var markers = new List<Point>();
 
-        // Largest first, so downstream first-inside-the-unit matching prefers the LED blob
-        // over any glint that survived the area floor
-        var points = contours
+        // Reflections off the shell can flare bigger than the LED, so raw size picks the
+        // wrong blob. Two independent LED signatures instead: its halo is blue-tinted
+        // (measured B-R +23..25 vs -10..-3 for reflections of the warm room light), and it
+        // is round where reflections are irregular streaks (roundness 0.5-0.8 vs 0.2-0.4).
+        // Blue tint partitions first; roundness-weighted area decides within a partition,
+        // so if white balance drift ever flattens the tint this degrades to pure shape
+        var candidates = contours
             .Where(c => Cv2.ContourArea(c) >= DirMarkerMinArea)
-            .OrderByDescending(c => Cv2.ContourArea(c))
-            .Select(c => OpenCvHelpers.ScalePoint(Cv2.MinAreaRect(c).Center.ToPoint()))
+            .Select(c =>
+            {
+                double area = Cv2.ContourArea(c);
+                Cv2.MinEnclosingCircle(c, out _, out float radius);
+                double roundness = area / Math.Max(1, Math.PI * radius * radius);
+                var mean = Cv2.Mean(new Mat(frame, Cv2.BoundingRect(c)));
+                bool blueTinted = mean.Val0 - mean.Val2 >= DirMarkerMinBlueTint;
+                return (contour: c, blueTinted, score: area * roundness * roundness);
+            })
+            .ToList();
+
+        // When any blue-tinted candidate exists, reflections (never tinted) are discarded
+        // outright rather than just outranked, so they can't be picked as a fallback and
+        // don't clutter the debug overlay. If white balance drift ever flattens the tint,
+        // everything stays in and the roundness score alone decides
+        if (candidates.Any(c => c.blueTinted))
+            candidates.RemoveAll(c => !c.blueTinted);
+
+        var points = candidates
+            .OrderByDescending(c => c.score)
+            .Select(c => OpenCvHelpers.ScalePoint(Cv2.MinAreaRect(c.contour).Center.ToPoint()))
             .ToList();
 
         markers.AddRange(points);

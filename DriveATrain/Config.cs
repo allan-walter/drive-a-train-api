@@ -63,10 +63,10 @@ public class CameraConfig
 
 public class VisionConfig
 {
-    public string Camera { get; set; }
     public int SlowWhenPixelsLessThan { get; set; }
     public int StopWhenPixelsLessThan { get; set; }
-
+    public int TurnoutClearance { get; set; }
+ 
     public Mat goZone = Cv2.ImRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
         "DriveATrain",
         "Static Images/go zone.png"), ImreadModes.Grayscale);

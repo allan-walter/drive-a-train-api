@@ -16,13 +16,15 @@ public class PovVideoService : IHostedService
 
     public Process? process;
     private readonly CameraConfig _config;
+    private readonly ILogger<PovVideoService> _logger;
     private Task? _pumpTask; // capture -> ffmpeg -> broadcast, all in one loop
     private CancellationTokenSource? _cts;
     private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
 
-    public PovVideoService(Config config)
+    public PovVideoService(Config config, ILogger<PovVideoService> logger)
     {
         _config = config.Camera;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -49,8 +51,11 @@ public class PovVideoService : IHostedService
             CreateNoWindow = true
         };
 
+        // TODO on first run of the day the camera is still turning on at thi point But since it doesn't aupo turn off  it works next time
         string[] args =
         [
+            "-hide_banner",
+            "-nostats", // otherwise the per-frame progress lines bury any real error in stderr
             "-fflags", "nobuffer",
             "-probesize", "32k",
             "-reconnect", "1",
@@ -75,9 +80,25 @@ public class PovVideoService : IHostedService
             psi.ArgumentList.Add(arg);
         }
 
-        process = Process.Start(psi);
+        _logger.LogInformation("Starting POV ffmpeg: {FileName} {Args}", psi.FileName, string.Join(' ', args));
+
+        try
+        {
+            process = Process.Start(psi);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Failed to start POV ffmpeg process ({FileName})", psi.FileName);
+            throw;
+        }
+
         if (process == null)
+        {
+            _logger.LogError("Process.Start returned null for POV ffmpeg ({FileName})", psi.FileName);
             throw new InvalidOperationException("Failed to start POV ffmpeg process.");
+        }
+
+        _logger.LogInformation("POV ffmpeg started, pid {Pid}, camera {Url}", process.Id, _config.PovCameraUrl);
 
         _ = Task.Run(() => DrainStderrAsync(process, token), token);
     }
@@ -88,6 +109,19 @@ public class PovVideoService : IHostedService
         _clients[id] = socket;
         var buffer = new byte[1024];
 
+        var exited = process == null || process.HasExited;
+        _logger.LogInformation(
+            "POV client {ClientId} connected ({ClientCount} total), ffmpeg {FfmpegState}",
+            id, _clients.Count, exited ? "is NOT running" : "running");
+
+        if (exited)
+        {
+            // The stream died before this client showed up, so it will never receive a frame.
+            _logger.LogError(
+                "POV client {ClientId} connected but ffmpeg is not running (exit code {ExitCode}); no video will be sent",
+                id, process?.ExitCode);
+        }
+
         try
         {
             while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -97,17 +131,22 @@ public class PovVideoService : IHostedService
                     break;
             }
         }
-        catch
+        catch (OperationCanceledException)
         {
-            /* client disconnected */
+            _logger.LogInformation("POV client {ClientId} cancelled", id);
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "POV client {ClientId} receive loop failed", id);
         }
         finally
         {
             _clients.TryRemove(id, out _);
+            _logger.LogInformation("POV client {ClientId} disconnected ({ClientCount} remaining)", id, _clients.Count);
         }
     }
 
-    private static async Task DrainStderrAsync(Process process, CancellationToken token)
+    private async Task DrainStderrAsync(Process process, CancellationToken token)
     {
         try
         {
@@ -117,43 +156,69 @@ public class PovVideoService : IHostedService
                 var line = await reader.ReadLineAsync(token);
                 if (line == null) break;
 
-                Debug.WriteLine($"[POV FFMPEG] {line}");
+                _logger.LogInformation("[POV FFMPEG] {Line}", line);
             }
         }
         catch (OperationCanceledException)
         {
         }
-        catch
+        catch (Exception e)
         {
-            /* process exiting */
+            _logger.LogWarning(e, "POV ffmpeg stderr reader stopped");
         }
     }
 
     private async Task BroadcastLoop(CancellationToken token)
     {
-        var stdout = process.StandardOutput.BaseStream;
-        var buffer = new byte[64 * 1024];
-
-        while (!token.IsCancellationRequested)
+        try
         {
-            int read;
-            try
+            var stdout = process!.StandardOutput.BaseStream;
+            var buffer = new byte[64 * 1024];
+
+            while (!token.IsCancellationRequested)
             {
-                read = await stdout.ReadAsync(buffer, token);
+                int read;
+                try
+                {
+                    read = await stdout.ReadAsync(buffer, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                if (read <= 0)
+                {
+                    // ffmpeg exited. Give it a moment so ExitCode and the last stderr lines are available.
+                    try
+                    {
+                        await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+                    }
+                    catch (TimeoutException)
+                    {
+                    }
+
+                    _logger.LogError(
+                        "POV ffmpeg stdout closed, exit code {ExitCode}. POV video is now dead until restart ({ClientCount} clients connected)",
+                        process.HasExited ? process.ExitCode : (int?)null,
+                        _clients.Count);
+                    break;
+                }
+
+                var chunk = buffer.AsMemory(0, read);
+                var sends = _clients
+                    .Where(kvp => kvp.Value.State == WebSocketState.Open)
+                    .Select(kvp => SendToClientAsync(kvp.Key, kvp.Value, chunk, token));
+
+                await Task.WhenAll(sends);
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-
-            if (read <= 0) break; // ffmpeg exited
-
-            var chunk = buffer.AsMemory(0, read);
-            var sends = _clients
-                .Where(kvp => kvp.Value.State == WebSocketState.Open)
-                .Select(kvp => SendToClientAsync(kvp.Key, kvp.Value, chunk, token));
-
-            await Task.WhenAll(sends);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "POV broadcast loop crashed");
         }
     }
 
@@ -163,8 +228,9 @@ public class PovVideoService : IHostedService
         {
             await socket.SendAsync(chunk, WebSocketMessageType.Binary, true, token);
         }
-        catch
+        catch (Exception e)
         {
+            _logger.LogWarning(e, "POV send to client {ClientId} failed, dropping client", id);
             _clients.TryRemove(id, out _);
         }
     }
@@ -184,9 +250,9 @@ public class PovVideoService : IHostedService
             {
                 process.Kill();
             }
-            catch
+            catch (Exception e)
             {
-                /* already exited */
+                _logger.LogDebug(e, "POV ffmpeg already exited before Kill");
             }
         }
     }

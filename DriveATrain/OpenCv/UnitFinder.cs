@@ -33,10 +33,11 @@ public static class UnitFinder
     private const int MaxWidth = 85;
     private const double MinAspect = 2.2;
     private const double MaxAspect = 6.5;
-    // The direction LED bites a notch out of the unit's blob; with the notch a real unit
-    // measures ~0.53 but mask jitter has been observed dipping it to 0.44, while wandering
-    // cables sit around 0.2-0.35, so 0.38 splits them with margin on both sides
-    private const double MinFill = 0.38;
+    // Token guard against pathologically sparse shapes only (e.g. parallel wires merging
+    // into one contour). Thin wires are already killed by MinWidth, and the LED notch plus
+    // mask jitter drags a real unit as low as 0.44, so this stays far below that — raising
+    // it back toward 0.5 is what caused the on/off detection flashing
+    private const double MinFill = 0.25;
 
     // A unit is always fully in frame, anything running off an edge is the bench or the backdrop
     private const int BorderMargin = 4;
