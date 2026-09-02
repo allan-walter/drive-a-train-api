@@ -27,12 +27,15 @@ public class DccService : IHostedService
     private Config config;
     IHostApplicationLifetime _lifetime;
     private BroadcastService _broadcastService;
+    PovVideoService povVideoService;
 
-    public DccService(Config config, IHostApplicationLifetime lifetime, BroadcastService broadcastService)
+    public DccService(Config config, PovVideoService povVideoService, IHostApplicationLifetime lifetime,
+        BroadcastService broadcastService)
     {
         this.config = config;
         _lifetime = lifetime;
         _broadcastService = broadcastService;
+        this.povVideoService = povVideoService;
 
 
         Port = new SerialPort(config.Dcc.Port, 115200); // change this
@@ -90,6 +93,11 @@ public class DccService : IHostedService
     {
         if (await SendCommand("<1>"))
             PowerIsOn = true;
+
+        // Wait for camera to turn on
+        await Task.Delay(3000);
+        
+        povVideoService.StartAsync();
     }
 
     public async Task PowerOff()

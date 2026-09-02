@@ -17,7 +17,7 @@ public static class DebugWindow
 
     private static List<string> debugCategories =
     [
-        "dirMarkers",
+        // "dirMarkers",
         // "units"
     ];
 

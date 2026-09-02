@@ -4,7 +4,11 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace DriveATrain.Hubs;
 
-public class UnitHub(DccService dccService, UnitService unitService, TurnoutService turnoutService) : Hub
+public class UnitHub(
+    DccService dccService,
+    BroadcastService broadcastService,
+    UnitService unitService,
+    TurnoutService turnoutService) : Hub
 {
     public override Task OnConnectedAsync()
     {
@@ -29,6 +33,11 @@ public class UnitHub(DccService dccService, UnitService unitService, TurnoutServ
     public async Task Turnout(Turnout turnout)
     {
         await turnoutService.Run(turnout);
+    }
+
+    public async Task SetDebugState(bool debug)
+    {
+        broadcastService.ShowDebugOverlay = debug;
     }
 
     public async Task DebugTurnout(DebugTurnout debugTurnout)

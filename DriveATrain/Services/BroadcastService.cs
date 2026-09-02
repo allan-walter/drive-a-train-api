@@ -20,6 +20,7 @@ public class BroadcastService : IHostedService, IDisposable
     private Task? _pumpTask; // capture -> ffmpeg -> broadcast, all in one loop
     private NamedPipeServerStream audioPipe;
     public EngineAudioSource engineAudio;
+    public bool ShowDebugOverlay = true;
 
     public BroadcastService(CaptureService captureService)
     {
@@ -240,13 +241,14 @@ public class BroadcastService : IHostedService, IDisposable
             if (!_captureService.TryGetLatestFrame(frame) || frame.Empty())
                 continue;
 
-            lock (_captureService.debugOverlayLock)
-            {
-                using var expanded = new Mat();
-                Cv2.Resize(_captureService.debugOverlayFrame, expanded,
-                    new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
-                Blend.BlendOverlay(expanded, frame, 1);
-            }
+            if (ShowDebugOverlay)
+                lock (_captureService.debugOverlayLock)
+                {
+                    using var expanded = new Mat();
+                    Cv2.Resize(_captureService.debugOverlayFrame, expanded,
+                        new Size(CaptureService.CAMERA_WIDTH, CaptureService.CAMERA_HEIGHT));
+                    Blend.BlendOverlay(expanded, frame, 1);
+                }
 
             Marshal.Copy(frame.Data, buffer, 0, frameBytes);
             try

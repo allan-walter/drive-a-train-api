@@ -5,7 +5,7 @@ using DriveATrain.OpenCv;
 
 namespace DriveATrain.Services;
 
-public class PovVideoService : IHostedService
+public class PovVideoService
 {
     public const int CAMERA_WIDTH = 320;
     public const int CAMERA_HEIGHT = 240;
@@ -27,15 +27,17 @@ public class PovVideoService : IHostedService
         _logger = logger;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public void StartAsync()
     {
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (_pumpTask != null)
+            return;
+
+        _cts = new CancellationTokenSource();
+
         StartFfmpeg(_cts.Token);
         // One background task drives both the capture->stdin write and stdout->clients broadcast,
         // via two inner loops on the same Task so a single Stop/Dispose path covers everything.
         _pumpTask = Task.Run(() => BroadcastLoop(_cts.Token));
-
-        return Task.CompletedTask;
     }
 
     private void StartFfmpeg(CancellationToken token)
@@ -192,7 +194,8 @@ public class PovVideoService : IHostedService
                     // ffmpeg exited. Give it a moment so ExitCode and the last stderr lines are available.
                     try
                     {
-                        await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+                        await process.WaitForExitAsync(CancellationToken.None)
+                            .WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
                     }
                     catch (TimeoutException)
                     {
@@ -255,5 +258,7 @@ public class PovVideoService : IHostedService
                 _logger.LogDebug(e, "POV ffmpeg already exited before Kill");
             }
         }
+
+        _pumpTask = null;
     }
 }

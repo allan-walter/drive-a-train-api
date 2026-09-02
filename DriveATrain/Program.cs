@@ -35,7 +35,6 @@ builder.Services.AddSingleton<UnitService>();
 builder.Services.AddSingleton<TurnoutService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TurnoutService>());
 builder.Services.AddSingleton<PovVideoService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<PovVideoService>());
 builder.Services.AddSingleton<CaptureService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CaptureService>());
 builder.Services.AddSingleton<BroadcastService>();

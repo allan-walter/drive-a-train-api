@@ -172,6 +172,7 @@ public struct LiveData
     public double ReverseLimitValue { get; set; }
 
     public bool PowerOn { get; set; }
+    public bool IsDebug { get; set; }
     public List<Uncouple> Connections { get; set; }
 }
 
