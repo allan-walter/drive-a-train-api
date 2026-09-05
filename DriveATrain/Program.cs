@@ -1,4 +1,4 @@
-using DriveATrain;
+﻿using DriveATrain;
 using DriveATrain.Auth;
 using DriveATrain.Data;
 using DriveATrain.Hubs;
@@ -30,6 +30,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttService>());
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DetectorService>());
 builder.Services.AddSingleton<LimiterService>();
+builder.Services.AddSingleton<ArucoService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<UnitService>());
 builder.Services.AddSingleton<UnitService>();
 builder.Services.AddSingleton<TurnoutService>();

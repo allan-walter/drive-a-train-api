@@ -1,4 +1,4 @@
-using DriveATrain.Hubs;
+﻿using DriveATrain.Hubs;
 using DriveATrain.Services.Layout;
 
 namespace DriveATrain.Services;
@@ -17,7 +17,7 @@ public class TurnoutService : IHostedService
     }
 
     private Task<bool> SendCommand(string command) =>
-        _mqtt.PublishAsync(config.Turnout.CommandTopic, command);
+        _mqtt.PublishAsync(config.Turnout.CommandTopic, command, false);
 
     public async Task Debug(DebugTurnout debugTurnout)
     {

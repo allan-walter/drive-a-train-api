@@ -1,4 +1,4 @@
-using DriveATrain;
+﻿using DriveATrain;
 using DriveATrain.OpenCv;
 using DriveATrain.Services;
 using OpenCvSharp;
@@ -12,7 +12,7 @@ class Program
 
     static void Main(string[] args)
     {
-        string image = args.Length > 0 ? args[0] : Path.Combine(StaticImages, "live3.jpg");
+        string image = args.Length > 0 ? args[0] : Path.Combine(StaticImages, "live4.jpg");
 
         using var frame = Cv2.ImRead(image);
         if (frame.Empty())
@@ -26,6 +26,13 @@ class Program
 
         foreach (var h in hits)
             Console.WriteLine($"{h.Colour,-7} {h.Rect.Size.Width:0}x{h.Rect.Size.Height:0} fill={h.Fill:0.00} at ({h.Rect.Center.X:0},{h.Rect.Center.Y:0})");
+
+        using var aruco = new ArucoService();
+        var markers = aruco.Find(frame);
+
+        Console.WriteLine($"{markers.Count} aruco markers");
+        foreach (var (position, id) in markers)
+            Console.WriteLine($"id={id} at ({position.X:0},{position.Y:0})");
 
         Console.WriteLine("enter to close");
         Console.ReadLine();

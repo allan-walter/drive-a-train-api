@@ -50,7 +50,7 @@ public class MqttService : BackgroundService
         }
     }
 
-    public async Task<bool> PublishAsync(string topic, string payload)
+    public async Task<bool> PublishAsync(string topic, string payload, bool retain)
     {
         if (!_client.IsConnected)
         {
@@ -60,7 +60,7 @@ public class MqttService : BackgroundService
 
         try
         {
-            await _client.PublishStringAsync(topic, payload);
+            await _client.PublishStringAsync(topic, payload, retain: retain);
             _log.LogInformation("MQTT published {Topic}: {Payload}", topic, payload);
             return true;
         }
