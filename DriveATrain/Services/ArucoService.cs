@@ -1,4 +1,4 @@
-using OpenCvSharp;
+﻿using OpenCvSharp;
 using OpenCvSharp.Aruco;
 
 namespace DriveATrain.Services;
@@ -12,8 +12,16 @@ public class ArucoService : IDisposable
 
     public ArucoService()
     {
-        // The tags are only ~25px, under the default 0.03 minimum perimeter rate
-        var parameters = new DetectorParameters { MinMarkerPerimeterRate = 0.02 };
+        // DetectorParameters is a struct, so build it in one go
+        var parameters = new DetectorParameters
+        {
+            // The tags are only ~25px, under the default 0.03 minimum perimeter rate
+            MinMarkerPerimeterRate = 0.02,
+            // Smaller thresholding windows, or a dim tag gets lost against the loco
+            AdaptiveThreshWinSizeMin = 3,
+            AdaptiveThreshWinSizeMax = 15,
+            AdaptiveThreshWinSizeStep = 2,
+        };
         _detector = new ArucoDetector(_dictionary, parameters, new RefineParameters());
     }
 
