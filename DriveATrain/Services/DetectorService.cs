@@ -16,6 +16,7 @@ public class DetectorService(
     UnitService unitService,
     LayoutService layoutService,
     LayoutDrawingService layoutDrawingService,
+    ArucoService arucoService,
     IHubContext<UnitHub> unitHub,
     Config config) : IHostedService, IDisposable
 {
@@ -121,6 +122,23 @@ public class DetectorService(
             // is a candidate the orientation logic saw, hidden ones were misleading
             foreach (var dirMarker in dirMarkers)
                 Cv2.Circle(debugFrame, dirMarker, 3, Colors.Gold, -1);
+
+
+            var aruco = arucoService.Find(fullResFrame);
+            foreach (var marker in aruco)
+            {
+                Cv2.Circle(debugFrame, OpenCvHelpers.ScalePoint(marker.Position.ToPoint()), 3, Colors.Blue);
+                // var points = [marker.po]
+                // Cv2.Polylines(debugFrame, new[] { hit.Rect.Points().Select(p => p.ToPoint()).ToArray() },
+                //     isClosed: true, color: Colors.Yellow, thickness: 2, lineType: LineTypes.AntiAlias);
+            }
+
+            if (aruco.Count == 0)
+            {
+                var outputDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "DriveATrain");
+                fullResFrame.SaveImage(Path.Combine(outputDir, "live5.jpg"));
+            }
 
             lock (captureService.debugOverlayLock)
             {

@@ -97,7 +97,7 @@ public class DccService : IHostedService
         // Wait for camera to turn on
         await Task.Delay(3000);
         
-        povVideoService.StartAsync();
+        await povVideoService.StartAsync();
     }
 
     public async Task PowerOff()
@@ -178,29 +178,32 @@ public class DccService : IHostedService
     {
         PowerOn();
 
-        _lifetime.ApplicationStopping.Register(OnStopping);
+        // _lifetime.ApplicationStopping.Register(OnStopping);
         return Task.CompletedTask;
     }
 
-    void OnStopping()
-    {
-        try
-        {
-            // Turn track power OFF safely
-            PowerOff();
-            Task.Delay(CMD_TIME); // give it time to send
+    // void OnStopping()
+    // {
+    //     try
+    //     {
+    //         // Turn track power OFF safely
+    //         PowerOff();
+    //         Task.Delay(CMD_TIME); // give it time to send
+    //
+    //         Port.Close();
+    //     }
+    //     catch (Exception e)
+    //     {
+    //         Debug.WriteLine(e);
+    //     }
+    // }
 
-            Port.Close();
-        }
-        catch (Exception e)
-        {
-            Debug.WriteLine(e);
-        }
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        // PowerOn() starts the POV ffmpeg, so shutdown has to stop it. .NET does not kill child
+        // processes when the parent exits on Linux, so without this the old ffmpeg survives an API
+        // restart still holding its connection to the camera's :81/stream.
+        await povVideoService.StopAsync(cancellationToken);
     }
 }
 
