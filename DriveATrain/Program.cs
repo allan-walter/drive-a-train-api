@@ -30,7 +30,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttService>());
 builder.Services.AddSingleton<DetectorService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DetectorService>());
 builder.Services.AddSingleton<LimiterService>();
-builder.Services.AddSingleton<ArucoService>();
+// The 4x4_50 ids printed on units. Keep this to just the tags in use - fewer codes means better error correction
+builder.Services.AddSingleton(_ => new ArucoService([22]));
 builder.Services.AddHostedService(sp => sp.GetRequiredService<UnitService>());
 builder.Services.AddSingleton<UnitService>();
 builder.Services.AddSingleton<TurnoutService>();

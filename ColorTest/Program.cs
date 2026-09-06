@@ -14,6 +14,16 @@ class Program
     {
         string image = args.Length > 0 ? args[0] : Path.Combine(StaticImages, "live4.jpg");
 
+
+        // A video or a folder of frames runs the batch report instead
+        if (Directory.Exists(image) || Path.GetExtension(image) is ".mp4" or ".avi" or ".mkv" or ".mov" or ".webm")
+        {
+            BatchTest.Run(image, Path.Combine(Path.GetTempPath(), "aruco misses"));
+            Console.WriteLine("enter to close");
+            Console.ReadLine();
+            return;
+        }
+
         using var frame = Cv2.ImRead(image);
         if (frame.Empty())
             throw new Exception($"Couldn't read {image}");
@@ -27,12 +37,17 @@ class Program
         foreach (var h in hits)
             Console.WriteLine($"{h.Colour,-7} {h.Rect.Size.Width:0}x{h.Rect.Size.Height:0} fill={h.Fill:0.00} at ({h.Rect.Center.X:0},{h.Rect.Center.Y:0})");
 
-        using var aruco = new ArucoService();
-        var markers = aruco.Find(frame);
+        using var aruco = new ArucoService([22]);
 
-        Console.WriteLine($"{markers.Count} aruco markers");
-        foreach (var (position, id) in markers)
-            Console.WriteLine($"id={id} at ({position.X:0},{position.Y:0})");
+        foreach (var h in hits)
+        {
+            // Pad the unit's box so a tag near the edge keeps its quiet zone
+            var box = h.Rect.BoundingRect();
+            var roi = new Rect(box.X - 30, box.Y - 30, box.Width + 60, box.Height + 60);
+
+            foreach (var (position, id) in aruco.Find(frame, roi))
+                Console.WriteLine($"{h.Colour} unit: aruco id={id} at ({position.X:0},{position.Y:0})");
+        }
 
         Console.WriteLine("enter to close");
         Console.ReadLine();
