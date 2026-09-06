@@ -66,6 +66,29 @@ public class CameraConfig
     public bool Flip { get; set; }
     public string BirdsEyeCameraName { get; set; }
     public string PovCameraUrl { get; set; }
+
+    /// <summary>
+    /// framesize_t value pushed to the POV camera before streaming starts. The sketch forces
+    /// FRAMESIZE_QVGA on every boot and never persists the setting, so it has to be re-applied
+    /// each time. Values (OV2640, the sensor on the AI-Thinker board):
+    /// <code>
+    ///   13 = UXGA   1600x1200
+    ///   12 = SXGA   1280x1024
+    ///   11 = HD     1280x720
+    ///   10 = XGA    1024x768
+    ///    9 = SVGA   800x600
+    ///    8 = VGA    640x480
+    ///    7 = HVGA   480x320
+    ///    6 = CIF    400x296
+    ///    5 = QVGA   320x240   &lt;- the sketch's boot default
+    ///    4 =        240x240
+    ///    3 = HQVGA  240x176
+    ///    2 = QCIF   176x144
+    ///    1 = QQVGA  160x120
+    ///    0 =         96x96
+    /// </code>
+    /// </summary>
+    public int PovCameraFrameSize { get; set; } = 9;
 }
 
 public class VisionConfig
